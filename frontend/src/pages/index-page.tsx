@@ -18,7 +18,6 @@ const DEFAULT_CATEGORIES: Category[] = [
 	{ id: 9, name: '公告', created_at: '' }
 ];
 
-// 仿图片风格的彩色卡通笑脸头像配色池
 const SMILEY_THEMES = [
 	{ bg: '#4ade80', face: '🤩' },
 	{ bg: '#c084fc', face: '😂' },
@@ -29,9 +28,7 @@ const SMILEY_THEMES = [
 	{ bg: '#22c55e', face: '🥲' },
 	{ bg: '#38bdf8', face: '😮' },
 	{ bg: '#fb923c', face: '😎' },
-	{ bg: '#2dd4bf', face: '😁' },
-	{ bg: '#f472b6', face: '🥳' },
-	{ bg: '#818cf8', face: '🤖' }
+	{ bg: '#2dd4bf', face: '😁' }
 ];
 
 function CuteCircleAvatar({ name, avatarUrl, index }: { name: string; avatarUrl?: string | null; index: number }) {
@@ -40,25 +37,15 @@ function CuteCircleAvatar({ name, avatarUrl, index }: { name: string; avatarUrl?
 		<div className="flex flex-col items-center group cursor-pointer">
 			<div className="relative w-11 h-11">
 				{avatarUrl ? (
-					<img
-						src={avatarUrl}
-						alt={name}
-						className="w-11 h-11 rounded-full object-cover border border-[#30363d] group-hover:scale-105 transition-transform"
-					/>
+					<img src={avatarUrl} alt={name} className="w-11 h-11 rounded-full object-cover border border-[#30363d]" />
 				) : (
-					<div
-						style={{ backgroundColor: theme.bg }}
-						className="w-11 h-11 rounded-full flex items-center justify-center text-xl shadow-inner group-hover:scale-105 transition-transform select-none"
-					>
+					<div style={{ backgroundColor: theme.bg }} className="w-11 h-11 rounded-full flex items-center justify-center text-xl shadow-inner select-none">
 						{theme.face}
 					</div>
 				)}
-				{/* 右下角在线翠绿小圆点 */}
 				<span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-[#3fb950] border-2 border-[#161b22]" />
 			</div>
-			<span className="mt-1.5 text-[11px] text-gray-300 group-hover:text-white truncate w-14 text-center">
-				{name}
-			</span>
+			<span className="mt-1.5 text-[11px] text-gray-300 group-hover:text-white truncate w-14 text-center">{name}</span>
 		</div>
 	);
 }
@@ -78,23 +65,21 @@ export function IndexPage() {
 	const [pinOnCreate, setPinOnCreate] = React.useState<boolean>(false);
 
 	const [points, setPoints] = React.useState<number>(() => (user as any)?.points ?? 0);
-	const [userTitle, setUserTitle] = React.useState<string>(() => (user as any)?.title || (user?.role === 'admin' ? '👑 创始站长' : '🌱 初来乍到'));
+	const [userTitle, setUserTitle] = React.useState<string>(() => {
+		const raw = (user as any)?.title;
+		if (!raw || raw.includes('创始站长')) return user?.role === 'admin' ? '👑 站长' : '🌱 初来乍到';
+		return raw;
+	});
 	const [checkedIn, setCheckedIn] = React.useState<boolean>(() => Boolean((user as any)?.checked_in_today));
 	const [uploading, setUploading] = React.useState<boolean>(false);
 	const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-	// 社区统计与在线状态
 	const [commStats, setCommStats] = React.useState<{
 		topics: number;
 		replies: number;
 		users: number;
 		latest_users: Array<{ id: number; username: string; avatar_url?: string | null }>;
-	}>({
-		topics: 0,
-		replies: 0,
-		users: 0,
-		latest_users: []
-	});
+	}>({ topics: 0, replies: 0, users: 0, latest_users: [] });
 
 	React.useEffect(() => {
 		async function init() {
@@ -110,13 +95,17 @@ export function IndexPage() {
 
 			if (token) {
 				try {
-					const freshUser = await apiFetch<any>('/me', { headers: getSecurityHeaders('GET') });
-					if (freshUser && freshUser.id) {
-						setPoints(freshUser.points ?? 0);
-						setUserTitle(freshUser.title || '🌱 初来乍到');
-						setCheckedIn(Boolean(freshUser.checked_in_today));
-						setUser(freshUser);
-						setCurrentUser(freshUser);
+					const fresh = await apiFetch<any>('/me', { headers: getSecurityHeaders('GET') });
+					if (fresh && fresh.id) {
+						const fixedTitle = (!fresh.title || fresh.title.includes('创始站长'))
+							? (fresh.role === 'admin' ? '👑 站长' : '🌱 初来乍到')
+							: fresh.title;
+						setPoints(fresh.points ?? 0);
+						setUserTitle(fixedTitle);
+						setCheckedIn(Boolean(fresh.checked_in_today));
+						const merged = { ...fresh, title: fixedTitle };
+						setUser(merged);
+						setCurrentUser(merged);
 					}
 				} catch (_) {}
 				loadPosts();
@@ -162,14 +151,12 @@ export function IndexPage() {
 	}
 
 	function handleSwitchTitle() {
-		const titles = ['👑 创始站长', '🐉 传说之龙', '⭐ 论坛之星', '🌏 正式成员', '🌱 初来乍到'];
+		const titles = ['👑 站长', '🐉 传说之龙', '⭐ 论坛之星', '🌏 正式成员', '🌱 初来乍到'];
 		const next = prompt('请选择或输入你想佩戴的称号：\n' + titles.join('、'), userTitle);
 		if (next) {
 			const trimmed = next.trim();
 			setUserTitle(trimmed);
-			if (user) {
-				setUser({ ...user, title: trimmed } as any);
-			}
+			if (user) setUser({ ...user, title: trimmed } as any);
 		}
 	}
 
@@ -206,20 +193,11 @@ export function IndexPage() {
 			const res = await apiFetch<{ success: boolean; id: number }>('/posts', {
 				method: 'POST',
 				headers: getSecurityHeaders('POST'),
-				body: JSON.stringify({
-					title: newTitle,
-					content: newContent,
-					category_id: Number(newCategoryId) || 1
-				})
+				body: JSON.stringify({ title: newTitle, content: newContent, category_id: Number(newCategoryId) || 1 })
 			});
-
 			if (pinOnCreate && res?.id && user?.role === 'admin') {
-				await apiFetch(`/posts/${res.id}/pin`, {
-					method: 'POST',
-					headers: getSecurityHeaders('POST')
-				}).catch(() => {});
+				await apiFetch(`/posts/${res.id}/pin`, { method: 'POST', headers: getSecurityHeaders('POST') }).catch(() => {});
 			}
-
 			setNewTitle('');
 			setNewContent('');
 			setPinOnCreate(false);
@@ -233,10 +211,7 @@ export function IndexPage() {
 
 	async function handleTogglePin(postId: number) {
 		try {
-			await apiFetch(`/posts/${postId}/pin`, {
-				method: 'POST',
-				headers: getSecurityHeaders('POST')
-			});
+			await apiFetch(`/posts/${postId}/pin`, { method: 'POST', headers: getSecurityHeaders('POST') });
 			loadPosts();
 		} catch (err: any) {
 			alert('操作失败: ' + err.message);
@@ -245,11 +220,10 @@ export function IndexPage() {
 
 	async function handleSetBadgeAndReward(postId: number, authorName: string) {
 		const choice = prompt(
-			`【站长好帖授勋 & 自动发奖】\n正在为作者【${authorName}】的帖子授勋：\n\n请输入数字选择勋章（系统将自动向作者账户发放对应积分奖励）：\n1 = 💎 精华（自动奖励作者 +50 积分）\n2 = 🔥 推荐（自动奖励作者 +20 积分）\n3 = 🏆 神帖（自动奖励作者 +100 积分）\n4 = ✨ 原创（自动奖励作者 +30 积分）\n0 = 取消该帖勋章`,
+			`【站长好帖授勋 & 自动发奖】\n正在为作者【${authorName}】授勋：\n1 = 💎 精华（+50积分）\n2 = 🔥 推荐（+20积分）\n3 = 🏆 神帖（+100积分）\n4 = ✨ 原创（+30积分）\n0 = 取消勋章`,
 			'1'
 		);
 		if (choice === null) return;
-
 		const map: Record<string, { badge: string | null; bonus: number }> = {
 			'1': { badge: '精华', bonus: 50 },
 			'2': { badge: '推荐', bonus: 20 },
@@ -257,24 +231,14 @@ export function IndexPage() {
 			'4': { badge: '原创', bonus: 30 },
 			'0': { badge: null, bonus: 0 }
 		};
-
 		const selected = map[choice.trim()];
-		if (!selected) {
-			alert('请输入 0 ~ 4 之间的数字！');
-			return;
-		}
-
+		if (!selected) return alert('请输入 0 ~ 4 之间的数字！');
 		try {
 			await apiFetch(`/posts/${postId}/badge`, {
 				method: 'POST',
 				headers: getSecurityHeaders('POST'),
 				body: JSON.stringify(selected)
 			});
-			if (selected.badge) {
-				alert(`🎉 已成功授予【${selected.badge}】勋章！并向作者【${authorName}】自动发放 +${selected.bonus} 论坛积分！`);
-			} else {
-				alert('已取消该帖勋章');
-			}
 			loadPosts();
 		} catch (err: any) {
 			alert('操作失败: ' + err.message);
@@ -282,12 +246,9 @@ export function IndexPage() {
 	}
 
 	async function handleDeletePost(postId: number, title: string) {
-		if (!confirm(`确定要删除帖子《${title}》吗？`)) return;
+		if (!confirm(`确定要删除《${title}》吗？`)) return;
 		try {
-			await apiFetch(`/posts/${postId}`, {
-				method: 'DELETE',
-				headers: getSecurityHeaders('DELETE')
-			});
+			await apiFetch(`/posts/${postId}`, { method: 'DELETE', headers: getSecurityHeaders('DELETE') });
 			loadPosts();
 		} catch (err: any) {
 			alert('删除失败: ' + err.message);
@@ -296,39 +257,26 @@ export function IndexPage() {
 
 	function renderBadge(badge?: string | null) {
 		if (!badge) return null;
-		switch (badge) {
-			case '精华':
-				return <span className="bg-purple-600/90 text-white text-[11px] font-bold px-1.5 py-0.2 rounded shadow-sm">💎 精华</span>;
-			case '推荐':
-				return <span className="bg-rose-600/90 text-white text-[11px] font-bold px-1.5 py-0.2 rounded shadow-sm">🔥 推荐</span>;
-			case '神帖':
-				return <span className="bg-gradient-to-r from-amber-500 to-yellow-600 text-black text-[11px] font-extrabold px-1.5 py-0.2 rounded shadow-sm">🏆 神帖</span>;
-			case '原创':
-				return <span className="bg-emerald-600/90 text-white text-[11px] font-bold px-1.5 py-0.2 rounded shadow-sm">✨ 原创</span>;
-			default:
-				return <span className="bg-blue-600 text-white text-[11px] font-bold px-1.5 py-0.2 rounded">{badge}</span>;
-		}
+		if (badge === '精华') return <span className="bg-purple-600 text-white text-[11px] font-bold px-1.5 py-0.2 rounded">💎 精华</span>;
+		if (badge === '推荐') return <span className="bg-rose-600 text-white text-[11px] font-bold px-1.5 py-0.2 rounded">🔥 推荐</span>;
+		if (badge === '神帖') return <span className="bg-amber-500 text-black text-[11px] font-extrabold px-1.5 py-0.2 rounded">🏆 神帖</span>;
+		if (badge === '原创') return <span className="bg-emerald-600 text-white text-[11px] font-bold px-1.5 py-0.2 rounded">✨ 原创</span>;
+		return <span className="bg-blue-600 text-white text-[11px] font-bold px-1.5 py-0.2 rounded">{badge}</span>;
 	}
 
-	const navPills = [
-		{ id: 'all', name: '全部主题' },
-		...DEFAULT_CATEGORIES.map(c => ({ id: String(c.id), name: c.name }))
-	];
-
+	const navPills = [{ id: 'all', name: '全部主题' }, ...DEFAULT_CATEGORIES.map(c => ({ id: String(c.id), name: c.name }))];
 	const filteredPosts = posts.filter(p => {
 		if (activeTab === 'featured' && !p.badge) return false;
 		if (selectedCategory === 'all') return true;
 		return String(p.category_id) === selectedCategory;
 	});
 
-	function getCategoryName(catId: number | null | undefined, fallbackName?: string | null) {
-		if (fallbackName) return fallbackName;
-		const found = DEFAULT_CATEGORIES.find(c => c.id === Number(catId));
-		return found ? found.name : '茶水间';
+	function getCategoryName(catId: number | null | undefined, fallback?: string | null) {
+		if (fallback) return fallback;
+		return DEFAULT_CATEGORIES.find(c => c.id === Number(catId))?.name || '茶水间';
 	}
 
-	// 组装最新用户与在线用户展示列表（优先展示数据库真实注册会员，不够 8 个自动补齐氛围成员）
-	const fallbackAtmosphereUsers = [
+	const fallbackUsers = [
 		{ id: 101, username: 'Alex_M', avatar_url: null },
 		{ id: 102, username: 'Sally', avatar_url: null },
 		{ id: 103, username: 'strings', avatar_url: null },
@@ -339,16 +287,8 @@ export function IndexPage() {
 		{ id: 108, username: '极客老王', avatar_url: null }
 	];
 
-	const displayLatestUsers = [
-		...commStats.latest_users,
-		...fallbackAtmosphereUsers
-	].slice(0, 8);
-
-	const displayOnlineUsers = [
-		...commStats.latest_users,
-		...fallbackAtmosphereUsers.slice().reverse()
-	].slice(0, 8);
-
+	const displayLatestUsers = [...commStats.latest_users, ...fallbackUsers].slice(0, 8);
+	const displayOnlineUsers = [...commStats.latest_users, ...fallbackUsers.slice().reverse()].slice(0, 8);
 	const onlineCount = Math.max(18, commStats.users * 3 + 12);
 
 	return (
@@ -359,9 +299,7 @@ export function IndexPage() {
 						key={pill.id}
 						onClick={() => setSelectedCategory(pill.id)}
 						className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${
-							selectedCategory === pill.id
-								? 'bg-[#21262d] text-white border border-[#30363d] shadow-sm'
-								: 'text-gray-400 hover:text-gray-200 hover:bg-[#161b22]'
+							selectedCategory === pill.id ? 'bg-[#21262d] text-white border border-[#30363d]' : 'text-gray-400 hover:text-gray-200 hover:bg-[#161b22]'
 						}`}
 					>
 						{pill.name}
@@ -373,24 +311,15 @@ export function IndexPage() {
 				<div className="lg:col-span-9 space-y-3">
 					<div className="flex items-center justify-between border-b border-[#30363d] pb-2">
 						<div className="flex items-center gap-4 text-xs font-semibold">
-							<button
-								onClick={() => setActiveTab('comment')}
-								className={`pb-1 ${activeTab === 'comment' ? 'text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-gray-200'}`}
-							>
+							<button onClick={() => setActiveTab('comment')} className={`pb-1 ${activeTab === 'comment' ? 'text-white border-b-2 border-blue-500' : 'text-gray-400'}`}>
 								全部动态
 							</button>
-							<button
-								onClick={() => setActiveTab('featured')}
-								className={`pb-1 flex items-center gap-1 ${activeTab === 'featured' ? 'text-purple-400 border-b-2 border-purple-500' : 'text-gray-400 hover:text-purple-300'}`}
-							>
+							<button onClick={() => setActiveTab('featured')} className={`pb-1 ${activeTab === 'featured' ? 'text-purple-400 border-b-2 border-purple-500' : 'text-gray-400'}`}>
 								💎 精华神帖区
 							</button>
 						</div>
 						{user && (
-							<button
-								onClick={() => setShowEditor(!showEditor)}
-								className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded flex items-center gap-1 font-medium transition-colors"
-							>
+							<button onClick={() => setShowEditor(!showEditor)} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded flex items-center gap-1 font-medium">
 								<Plus className="w-3.5 h-3.5" /> 发帖
 							</button>
 						)}
@@ -399,67 +328,24 @@ export function IndexPage() {
 					{showEditor && user && (
 						<form onSubmit={handleCreatePost} className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 space-y-3">
 							<div className="flex gap-2">
-								<select
-									value={newCategoryId}
-									onChange={e => setNewCategoryId(e.target.value)}
-									className="bg-[#0d1117] border border-[#30363d] text-white text-xs rounded px-2.5 py-1.5 font-medium"
-								>
-									{DEFAULT_CATEGORIES.map(c => (
-										<option key={c.id} value={c.id}>{c.name}</option>
-									))}
+								<select value={newCategoryId} onChange={e => setNewCategoryId(e.target.value)} className="bg-[#0d1117] border border-[#30363d] text-white text-xs rounded px-2.5 py-1.5">
+									{DEFAULT_CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
 								</select>
-								<Input
-									placeholder="标题：请用一句话说清你的主题"
-									value={newTitle}
-									onChange={e => setNewTitle(e.target.value)}
-									className="bg-[#0d1117] border-[#30363d] text-white text-sm"
-								/>
+								<Input placeholder="标题：请用一句话说清你的主题" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="bg-[#0d1117] border-[#30363d] text-white text-sm" />
 							</div>
-
-							<div className="relative">
-								<textarea
-									rows={6}
-									placeholder="正文内容（支持 Markdown 语法，可以点击下方按钮上传图片）..."
-									value={newContent}
-									onChange={e => setNewContent(e.target.value)}
-									className="w-full bg-[#0d1117] border border-[#30363d] text-white text-sm rounded-md p-2.5 outline-none focus:border-blue-500"
-								/>
-							</div>
-
+							<textarea rows={6} placeholder="正文内容（支持 Markdown 语法）..." value={newContent} onChange={e => setNewContent(e.target.value)} className="w-full bg-[#0d1117] border border-[#30363d] text-white text-sm rounded-md p-2.5 outline-none" />
 							<div className="flex items-center justify-between pt-1 flex-wrap gap-2">
 								<div className="flex items-center gap-3">
-									<input
-										type="file"
-										ref={fileInputRef}
-										onChange={handleImageUpload}
-										accept="image/*"
-										className="hidden"
-									/>
-									<Button
-										type="button"
-										variant="outline"
-										size="sm"
-										onClick={() => fileInputRef.current?.click()}
-										disabled={uploading}
-										className="border-[#30363d] text-gray-300 hover:text-white text-xs h-7"
-									>
-										<ImageIcon className="w-3.5 h-3.5 mr-1" />
-										{uploading ? '上传中...' : '插入图片'}
+									<input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
+									<Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="border-[#30363d] text-gray-300 text-xs h-7">
+										<ImageIcon className="w-3.5 h-3.5 mr-1" /> {uploading ? '上传中...' : '插入图片'}
 									</Button>
-
 									{user.role === 'admin' && (
-										<label className="flex items-center gap-1.5 text-xs text-amber-400 cursor-pointer select-none">
-											<input
-												type="checkbox"
-												checked={pinOnCreate}
-												onChange={e => setPinOnCreate(e.target.checked)}
-												className="rounded border-gray-600"
-											/>
-											📌 发布后直接设为全站置顶帖
+										<label className="flex items-center gap-1.5 text-xs text-amber-400 cursor-pointer">
+											<input type="checkbox" checked={pinOnCreate} onChange={e => setPinOnCreate(e.target.checked)} /> 📌 直接设为全站置顶帖
 										</label>
 									)}
 								</div>
-
 								<div className="flex gap-2">
 									<Button type="button" variant="ghost" size="sm" onClick={() => setShowEditor(false)} className="text-xs text-gray-400">取消</Button>
 									<Button type="submit" size="sm" className="bg-blue-600 hover:bg-blue-700 text-xs">立即发布</Button>
@@ -469,27 +355,19 @@ export function IndexPage() {
 					)}
 
 					{!user ? (
-						<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-12 text-center space-y-4 shadow-lg">
+						<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-12 text-center space-y-4">
 							<div className="w-14 h-14 rounded-full bg-blue-600/10 border border-blue-500/30 flex items-center justify-center mx-auto text-blue-400">
 								<Lock className="w-7 h-7" />
 							</div>
-							<div className="space-y-1.5">
-								<h3 className="text-lg font-bold text-white">会员专属私密社区 · 仅限注册用户查看</h3>
-								<p className="text-xs text-gray-400 max-w-md mx-auto leading-relaxed">
-									为保护社区内部极客资源与深度交流内容，自由论坛仅对注册会员开放浏览。10 秒免费注册即可解锁全部板块并领取每日签到积分！
-								</p>
-							</div>
+							<h3 className="text-lg font-bold text-white">会员专属私密社区 · 仅限注册用户查看</h3>
+							<p className="text-xs text-gray-400 max-w-md mx-auto">自由论坛仅对注册会员开放浏览。10 秒免费注册即可解锁全部板块并领取每日签到积分！</p>
 							<div className="flex items-center justify-center gap-3 pt-2">
-								<Button asChild className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6">
-									<a href="/register">立即免费注册</a>
-								</Button>
-								<Button asChild variant="outline" className="border-gray-700 text-gray-200 hover:bg-gray-800 px-6">
-									<a href="/login">已有账号登录</a>
-								</Button>
+								<Button asChild className="bg-blue-600 hover:bg-blue-700 text-white px-6"><a href="/register">立即免费注册</a></Button>
+								<Button asChild variant="outline" className="border-gray-700 text-gray-200 px-6"><a href="/login">已有账号登录</a></Button>
 							</div>
 						</div>
 					) : (
-						<div className="bg-[#161b22] border border-[#30363d] rounded-lg divide-y divide-[#21262d] overflow-hidden shadow-sm">
+						<div className="bg-[#161b22] border border-[#30363d] rounded-lg divide-y divide-[#21262d] overflow-hidden">
 							{loading ? (
 								<div className="p-8 text-center text-gray-500 text-sm">正在加载自由论坛内容...</div>
 							) : filteredPosts.length === 0 ? (
@@ -500,40 +378,25 @@ export function IndexPage() {
 							) : (
 								filteredPosts.map(post => (
 									<div key={post.id} className="p-3.5 hover:bg-[#1c2128] transition-colors flex items-start gap-3 group">
-										<div className="w-10 h-10 rounded-md bg-[#21262d] flex-shrink-0 flex items-center justify-center font-bold text-gray-300 overflow-hidden border border-[#30363d]">
-											{post.author_avatar ? (
-												<img src={post.author_avatar} alt="" className="w-full h-full object-cover" />
-											) : (
-												<span className="text-xs text-blue-400">{(post.author_name || 'U').slice(0, 2).toUpperCase()}</span>
-											)}
+										<div className="w-10 h-10 rounded-md bg-[#21262d] flex-shrink-0 flex items-center justify-center font-bold text-gray-300 border border-[#30363d]">
+											<span className="text-xs text-blue-400">{(post.author_name || 'U').slice(0, 2).toUpperCase()}</span>
 										</div>
-
 										<div className="flex-1 min-w-0">
 											<div className="flex items-center gap-1.5 flex-wrap">
-												{post.is_pinned === 1 && (
-													<span className="bg-[#b35900] text-white text-[11px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
-														置顶
-													</span>
-												)}
+												{post.is_pinned === 1 && <span className="bg-[#b35900] text-white text-[11px] font-bold px-1.5 py-0.2 rounded">置顶</span>}
 												{renderBadge(post.badge)}
-												<a
-													href={`/post?id=${post.id}`}
-													className={`text-[15px] font-medium leading-snug group-hover:text-blue-400 transition-colors ${
-														post.is_pinned === 1 ? 'text-[#ff7b72] font-semibold' : post.badge ? 'text-amber-200 font-semibold' : 'text-gray-100'
-													}`}
-												>
+												<a href={`/post?id=${post.id}`} className={`text-[15px] font-medium group-hover:text-blue-400 ${post.is_pinned === 1 ? 'text-[#ff7b72] font-semibold' : 'text-gray-100'}`}>
 													{post.title}
 												</a>
 												{(post.reward_points ?? 0) > 0 && (
-													<span className="bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[10px] px-1.5 py-0.2 rounded-full font-bold flex items-center gap-0.5">
+													<span className="bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
 														🎁 已赏 +{post.reward_points}分
 													</span>
 												)}
 											</div>
-
 											<div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400 flex-wrap">
 												<span className="text-[11px] font-medium px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
-													{post.author_title || '🌱 初来乍到'}
+													{post.author_role === 'admin' ? '👑 站长' : (post.author_title || '🌱 初来乍到')}
 												</span>
 												<span className="font-medium text-gray-300">{post.author_name || '会员'}</span>
 												<span>•</span>
@@ -542,41 +405,23 @@ export function IndexPage() {
 												<span className="bg-[#21262d] text-gray-300 px-1.5 py-0.5 rounded text-[11px] border border-[#30363d]">
 													{getCategoryName(post.category_id, post.category_name)}
 												</span>
-
 												{user.role === 'admin' && (
-													<span className="ml-auto flex items-center gap-2.5 opacity-85 hover:opacity-100">
-														<button
-															type="button"
-															onClick={() => handleSetBadgeAndReward(post.id, post.author_name || '会员')}
-															className="text-[11px] text-purple-400 hover:underline flex items-center gap-0.5 font-medium"
-														>
-															<Award className="w-3 h-3" />
-															加精/发奖
+													<span className="ml-auto flex items-center gap-2.5">
+														<button type="button" onClick={() => handleSetBadgeAndReward(post.id, post.author_name || '会员')} className="text-[11px] text-purple-400 hover:underline flex items-center gap-0.5">
+															<Award className="w-3 h-3" /> 加精/发奖
 														</button>
-														<button
-															type="button"
-															onClick={() => handleTogglePin(post.id)}
-															className="text-[11px] text-amber-400 hover:underline flex items-center gap-0.5"
-														>
-															<Pin className="w-3 h-3" />
-															{post.is_pinned === 1 ? '取消置顶' : '置顶'}
+														<button type="button" onClick={() => handleTogglePin(post.id)} className="text-[11px] text-amber-400 hover:underline flex items-center gap-0.5">
+															<Pin className="w-3 h-3" /> {post.is_pinned === 1 ? '取消置顶' : '置顶'}
 														</button>
-														<button
-															type="button"
-															onClick={() => handleDeletePost(post.id, post.title)}
-															className="text-[11px] text-red-400 hover:underline flex items-center gap-0.5"
-														>
-															<Trash2 className="w-3 h-3" />
-															删除
+														<button type="button" onClick={() => handleDeletePost(post.id, post.title)} className="text-[11px] text-red-400 hover:underline flex items-center gap-0.5">
+															<Trash2 className="w-3 h-3" /> 删除
 														</button>
 													</span>
 												)}
 											</div>
 										</div>
-
-										<div className="flex items-center gap-1 text-gray-400 group-hover:text-blue-400 bg-[#21262d] px-2 py-1 rounded-full text-xs font-semibold">
-											<MessageSquare className="w-3.5 h-3.5" />
-											<span>{post.comment_count || 0}</span>
+										<div className="flex items-center gap-1 text-gray-400 bg-[#21262d] px-2 py-1 rounded-full text-xs font-semibold">
+											<MessageSquare className="w-3.5 h-3.5" /> <span>{post.comment_count || 0}</span>
 										</div>
 									</div>
 								))
@@ -585,9 +430,8 @@ export function IndexPage() {
 					)}
 				</div>
 
-				{/* 右侧边栏 */}
 				<div className="lg:col-span-3 space-y-4">
-					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 shadow-sm text-sm">
+					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 text-sm">
 						{user ? (
 							<div className="space-y-3">
 								<div className="flex items-center gap-3">
@@ -595,76 +439,86 @@ export function IndexPage() {
 										{user.username.slice(0, 1).toUpperCase()}
 									</div>
 									<div className="flex-1 min-w-0">
-										<div className="flex items-center gap-1.5">
-											<h4 className="font-bold text-white text-base leading-tight truncate">{user.username}</h4>
-										</div>
-										<button
-											onClick={handleSwitchTitle}
-											title="点击切换装备的称号"
-											className="mt-1 text-[11px] px-1.5 py-0.5 rounded bg-blue-950/60 text-blue-300 border border-blue-800/60 hover:bg-blue-900/60 flex items-center gap-1 transition-colors"
-										>
-											<Trophy className="w-3 h-3 text-yellow-500" />
-											{userTitle}
+										<h4 className="font-bold text-white text-base truncate">{user.username}</h4>
+										<button onClick={handleSwitchTitle} className="mt-1 text-[11px] px-1.5 py-0.5 rounded bg-blue-950/60 text-blue-300 border border-blue-800/60 flex items-center gap-1">
+											<Trophy className="w-3 h-3 text-yellow-500" /> {userTitle}
 										</button>
 									</div>
 								</div>
-
 								<div className="bg-[#0d1117] p-2.5 rounded-md border border-[#21262d] flex items-center justify-between">
 									<div>
 										<span className="text-[11px] text-gray-400 block">论坛积分</span>
-										<span className="text-base font-bold text-yellow-400 flex items-center gap-1">
-											<Sparkles className="w-3.5 h-3.5" />
-											{points}
-										</span>
+										<span className="text-base font-bold text-yellow-400 flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" /> {points}</span>
 									</div>
-									<Button
-										size="sm"
-										onClick={handleCheckin}
-										disabled={checkedIn}
-										className={`text-xs h-7 px-3 font-semibold ${
-											checkedIn
-												? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-												: 'bg-emerald-600 hover:bg-emerald-700 text-white'
-										}`}
-									>
-										<CalendarCheck className="w-3.5 h-3.5 mr-1" />
-										{checkedIn ? '今日已签' : '每日签到'}
+									<Button size="sm" onClick={handleCheckin} disabled={checkedIn} className={`text-xs h-7 px-3 ${checkedIn ? 'bg-gray-700 text-gray-400' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}>
+										<CalendarCheck className="w-3.5 h-3.5 mr-1" /> {checkedIn ? '今日已签' : '每日签到'}
 									</Button>
 								</div>
-
-								<div className="grid grid-cols-2 gap-2 text-xs text-gray-300 pt-1">
-									<a href="/settings" className="hover:text-blue-400">目 我的主题</a>
-									<a href="/settings" className="hover:text-blue-400">💬 我的回帖</a>
-									<a href="/settings" className="hover:text-blue-400">☆ 我的收藏</a>
-									<a href="/settings" className="hover:text-blue-400">⚙️ 个人设置</a>
-								</div>
-
-								<Button
-									onClick={() => setShowEditor(true)}
-									className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs h-8 mt-2"
-								>
+								<Button onClick={() => setShowEditor(true)} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs h-8">
 									+ 发布新主题
 								</Button>
 							</div>
 						) : (
 							<div className="text-center py-2 space-y-3">
 								<h4 className="font-bold text-white text-sm">自由论坛 - 私密极客社区</h4>
-								<p className="text-xs text-gray-400">仅限注册会员访问。立即注册畅享资源、每日签到与发帖交流。</p>
 								<div className="flex gap-2">
-									<Button asChild size="sm" variant="outline" className="flex-1 text-xs border-gray-700">
-										<a href="/login">登录</a>
-									</Button>
-									<Button asChild size="sm" className="flex-1 text-xs bg-blue-600 hover:bg-blue-700 text-white">
-										<a href="/register">免费注册</a>
-									</Button>
+									<Button asChild size="sm" variant="outline" className="flex-1 text-xs border-gray-700"><a href="/login">登录</a></Button>
+									<Button asChild size="sm" className="flex-1 text-xs bg-blue-600 text-white"><a href="/register">免费注册</a></Button>
 								</div>
 							</div>
 						)}
 					</div>
 
-					{/* 快捷功能 */}
-					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3.5 shadow-sm text-xs space-y-2">
+					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3.5 text-xs space-y-2">
 						<span className="font-bold text-gray-200 block mb-2">快捷功能</span>
 						<div className="grid grid-cols-2 gap-y-2 text-gray-400">
 							<span onClick={handleCheckin} className="hover:text-emerald-400 cursor-pointer text-emerald-500 font-medium">• 每日签到（领积分）</span>
-							<span onClick={handleSwitchTitle} className="hover:tex
+							<span onClick={handleSwitchTitle} className="hover:text-blue-400 cursor-pointer">• 我的称号仓库</span>
+							<span onClick={() => setActiveTab('featured')} className="hover:text-purple-400 cursor-pointer text-purple-400 font-medium">• 💎 精华神帖列表</span>
+							<span className="hover:text-white cursor-pointer">• 社区热榜</span>
+							<span className="hover:text-white cursor-pointer">• 用户榜单</span>
+							<span className="hover:text-white cursor-pointer">• 站点地图</span>
+						</div>
+					</div>
+
+					{/* 站点统计 + 最新用户圆头像墙 */}
+					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 space-y-3">
+						<div>
+							<h4 className="font-bold text-white text-sm">站点统计</h4>
+							<p className="text-xs text-gray-400 mt-1">主题 {commStats.topics} · 回复 {commStats.replies} · 用户 {commStats.users}</p>
+						</div>
+						<div className="pt-1">
+							<h4 className="font-bold text-white text-sm mb-3">最新用户</h4>
+							<div className="grid grid-cols-4 gap-y-3 gap-x-2">
+								{displayLatestUsers.map((u, idx) => (
+									<CuteCircleAvatar key={`latest-${u.id}-${idx}`} name={u.username} avatarUrl={u.avatar_url} index={idx} />
+								))}
+							</div>
+						</div>
+					</div>
+
+					{/* 当前在线 + 在线圆头像墙 */}
+					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 space-y-3">
+						<div className="flex items-center justify-between">
+							<h4 className="font-bold text-white text-sm">当前在线</h4>
+							<span className="bg-[#0f2d1e] text-[#3fb950] border border-[#238636]/40 text-xs font-bold px-2.5 py-0.5 rounded-full">{onlineCount} 人</span>
+						</div>
+						<div className="grid grid-cols-4 gap-y-3 gap-x-2 pt-1">
+							{displayOnlineUsers.map((u, idx) => (
+								<CuteCircleAvatar key={`online-${u.id}-${idx}`} name={u.username} avatarUrl={u.avatar_url} index={idx + 4} />
+							))}
+						</div>
+					</div>
+
+					<div className="text-[11px] text-gray-400 px-1 leading-relaxed space-y-1">
+						<p>© 2026 自由论坛 · 轻量极客生活社区</p>
+						<p className="text-gray-300 font-medium">
+							关注TG频道：<a href="https://t.me/eziyuan_1" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline mr-2">@eziyuan_1</a>
+							TG群组：<a href="https://t.me/eziyuan_2" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">@eziyuan_2</a>
+						</p>
+					</div>
+				</div>
+			</div>
+		</PageShell>
+	);
+}
