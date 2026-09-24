@@ -1,10 +1,10 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, UserX } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { apiFetch, formatDate, getSecurityHeaders, type Category, type Post } from '@/lib/api';
-import { getToken, getUser, setUser } from '@/lib/auth';
+import { getToken, getUser, logout, setUser } from '@/lib/auth';
 
 const DEFAULT_CATEGORIES: Category[] = [
 	{ id: 1, name: '茶水间', created_at: '' },
@@ -281,7 +281,6 @@ export function IndexPage() {
 		}
 	}
 
-	// 用户点击头像一键上传自定义个性头像！
 	async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
 		const file = e.target.files?.[0];
 		if (!file || !user) return;
@@ -314,6 +313,35 @@ export function IndexPage() {
 			alert('上传异常：' + err.message);
 		} finally {
 			setAvatarUploading(false);
+		}
+	}
+
+	// 核心新增：来去自由 · 用户一键自主彻底注销账号（物理抹除全部痕迹）！
+	async function handleDeleteOwnAccount() {
+		if (!user) return;
+		if (user.role === 'admin') {
+			alert('👑 站长主账号受系统保护，不可注销！普通会员可使用此功能随时无痕注销。');
+			return;
+		}
+		const confirmText = prompt(
+			`【自由论坛 · 来去自由无痕注销】\n\n我们尊重每一位成员来去自由的权利。\n注销后，您的账号、邮箱、发布的所有帖子、评论及积分将被【物理级彻底抹除】，不留任何痕迹，且不可恢复。\n\n如确定离开，请在下方输入「确认注销」四个字：`,
+			''
+		);
+		if (confirmText !== '确认注销') {
+			if (confirmText !== null) alert('输入内容不一致，已取消注销操作。');
+			return;
+		}
+
+		try {
+			await apiFetch('/user/self', {
+				method: 'DELETE',
+				headers: getSecurityHeaders('DELETE')
+			});
+			logout();
+			alert('🚪 您的账号及所有数据已从自由论坛彻底抹除，未留任何痕迹。\n\n山水有相逢，祝您前程似锦，自由论坛随时欢迎您再次归来！');
+			window.location.href = '/';
+		} catch (err: any) {
+			alert('注销失败：' + err.message);
 		}
 	}
 
@@ -581,7 +609,6 @@ export function IndexPage() {
 							) : (
 								filteredPosts.map(post => (
 									<div key={post.id} className="p-3.5 hover:bg-[#1c2128] transition-colors flex items-start gap-3 group">
-										{/* 列表头像：优先展示用户自定义上传的头像！ */}
 										<div className="w-10 h-10 rounded-md bg-[#21262d] flex-shrink-0 flex items-center justify-center font-bold text-gray-300 overflow-hidden border border-[#30363d]">
 											{post.author_avatar ? (
 												<img src={post.author_avatar} alt="" className="w-full h-full object-cover" />
@@ -661,7 +688,7 @@ export function IndexPage() {
 							</a>
 						</div>
 						<p className="text-[11px] text-gray-500 pt-1">
-							© 2026 自由论坛 · 轻量极客生活社区 · 规则共决 · 资源共享
+							© 2026 自由论坛 · 轻量极客生活社区 · 来去自由 · 规则共决
 						</p>
 					</div>
 				</div>
@@ -679,7 +706,6 @@ export function IndexPage() {
 									className="hidden"
 								/>
 								<div className="flex items-center gap-3">
-									{/* 点击头像直接触发本地图片上传换头像！ */}
 									<div
 										onClick={() => avatarInputRef.current?.click()}
 										title="点击上传更换您的专属个性头像"
@@ -735,6 +761,7 @@ export function IndexPage() {
 						)}
 					</div>
 
+					{/* 快捷功能：新增【🚪 账号注销（来去自由）】 */}
 					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3.5 text-xs space-y-2">
 						<span className="font-bold text-gray-200 block mb-2">快捷功能</span>
 						<div className="grid grid-cols-2 gap-y-2 text-gray-400">
@@ -743,7 +770,7 @@ export function IndexPage() {
 							<span onClick={handleSwitchTitle} className="hover:text-blue-400 cursor-pointer">• 我的称号仓库</span>
 							<span onClick={() => setActiveTab('featured')} className="hover:text-purple-400 cursor-pointer text-purple-400 font-medium">• 💎 精华神帖列表</span>
 							<span className="hover:text-white cursor-pointer">• 社区热榜</span>
-							<span className="hover:text-white cursor-pointer">• 用户榜单</span>
+							<span onClick={handleDeleteOwnAccount} className="hover:text-rose-400 cursor-pointer text-rose-400/90 font-medium">• 🚪 账号注销(自由)</span>
 						</div>
 					</div>
 
