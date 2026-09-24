@@ -13,11 +13,9 @@ export function PageShell({
 	const [user, setUser] = React.useState<User | null>(() => getUser());
 
 	React.useEffect(() => {
-		// 自动将浏览器标签页的 CForum 替换为 自由论坛
 		if (!document.title || document.title.includes('CForum')) {
 			document.title = document.title.replace(/CForum/g, '自由论坛') || '自由论坛';
 		}
-		// 自动挂载蓝色专属 Logo 小图标到浏览器标签栏
 		let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement | null;
 		if (!link) {
 			link = document.createElement('link');
