@@ -99,7 +99,7 @@ export default {
 			}
 		}
 
-		// GET /api/community-stats (首页右下角：站点统计 + 最新注册用户 + 在线用户墙)
+		// GET /api/community-stats
 		if (url.pathname === '/api/community-stats' && method === 'GET') {
 			try {
 				const [userCount, postCount, commentCount, latestUsers] = await Promise.all([
@@ -337,6 +337,34 @@ export default {
 			}
 		}
 
+		// PUT /api/posts/:id (核心补齐：编辑修改帖子标题、正文与分类！)
+		if (url.pathname.match(/^\/api\/posts\/\d+$/) && method === 'PUT') {
+			try {
+				const userPayload = await authenticate(request);
+				const postId = url.pathname.split('/')[3];
+				const body = await request.json() as any;
+				const title = String(body.title || '').trim();
+				const content = String(body.content || '').trim();
+				const categoryId = body.category_id;
+
+				if (!title || !content) return jsonResponse({ error: '标题与内容不能为空' }, 400);
+
+				const post = await env.cforum_db.prepare('SELECT author_id FROM posts WHERE id = ?').bind(postId).first<{ author_id: number }>();
+				if (!post) return jsonResponse({ error: '帖子不存在' }, 404);
+				if (userPayload.role !== 'admin' && post.author_id !== userPayload.id) {
+					return jsonResponse({ error: '无权修改他人帖子' }, 403);
+				}
+
+				await env.cforum_db.prepare(
+					'UPDATE posts SET title = ?, content = ?, category_id = COALESCE(?, category_id) WHERE id = ?'
+				).bind(title, content, categoryId || null, postId).run();
+
+				return jsonResponse({ success: true });
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
 		// POST /api/posts/:id/badge
 		if (url.pathname.match(/^\/api\/posts\/\d+\/badge$/) && method === 'POST') {
 			try {
@@ -440,6 +468,25 @@ export default {
 			}
 		}
 
+		// DELETE /api/comments/:id (删除评论)
+		if (url.pathname.match(/^\/api\/comments\/\d+$/) && method === 'DELETE') {
+			try {
+				const userPayload = await authenticate(request);
+				const commentId = url.pathname.split('/')[3];
+
+				const comment = await env.cforum_db.prepare('SELECT author_id FROM comments WHERE id = ?').bind(commentId).first<{ author_id: number }>();
+				if (!comment) return jsonResponse({ error: '评论不存在' }, 404);
+				if (userPayload.role !== 'admin' && comment.author_id !== userPayload.id) {
+					return jsonResponse({ error: '无权删除他人评论' }, 403);
+				}
+
+				await env.cforum_db.prepare('DELETE FROM comments WHERE id = ?').bind(commentId).run();
+				return jsonResponse({ success: true });
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
 		// POST /api/posts/:id/like
 		if (url.pathname.match(/^\/api\/posts\/\d+\/like$/) && method === 'POST') {
 			try {
@@ -462,12 +509,13 @@ export default {
 			}
 		}
 
-		// POST /api/posts/:id/pin
-		if (url.pathname.match(/^\/api\/posts\/\d+\/pin$/) && method === 'POST') {
+		// POST /api/posts/:id/pin 及 /api/admin/posts/:id/pin (兼容首页与详情页置顶)
+		if ((url.pathname.match(/^\/api\/posts\/\d+\/pin$/) || url.pathname.match(/^\/api\/admin\/posts\/\d+\/pin$/)) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
 				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
-				const postId = url.pathname.split('/')[3];
+				const parts = url.pathname.split('/');
+				const postId = parts[parts.length - 2];
 
 				await env.cforum_db.prepare(
 					'UPDATE posts SET is_pinned = CASE WHEN is_pinned = 1 THEN 0 ELSE 1 END WHERE id = ?'
@@ -479,11 +527,27 @@ export default {
 			}
 		}
 
-		// DELETE /api/posts/:id
-		if (url.pathname.match(/^\/api\/posts\/\d+$/) && method === 'DELETE') {
+		// POST /api/admin/posts/:id/move (详情页移动帖子板块)
+		if (url.pathname.match(/^\/api\/admin\/posts\/\d+\/move$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
-				const postId = url.pathname.split('/')[3];
+				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
+				const postId = url.pathname.split('/')[4];
+				const body = await request.json() as any;
+
+				await env.cforum_db.prepare('UPDATE posts SET category_id = ? WHERE id = ?').bind(body.category_id || 1, postId).run();
+				return jsonResponse({ success: true });
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// DELETE /api/posts/:id 及 /api/admin/posts/:id (兼容首页与详情页删帖)
+		if ((url.pathname.match(/^\/api\/posts\/\d+$/) || url.pathname.match(/^\/api\/admin\/posts\/\d+$/)) && method === 'DELETE') {
+			try {
+				const userPayload = await authenticate(request);
+				const parts = url.pathname.split('/');
+				const postId = parts[parts.length - 1];
 
 				const post = await env.cforum_db.prepare('SELECT author_id FROM posts WHERE id = ?').bind(postId).first<{ author_id: number }>();
 				if (!post) return jsonResponse({ error: '帖子不存在' }, 404);
@@ -590,6 +654,6 @@ export default {
 			}
 		}
 
-		return new Response('Not Found', { status: 404, headers: { 'Access-Control-Allow-Origin': '*' } });
+		return jsonResponse({ error: '接口不存在: ' + url.pathname }, 404);
 	}
 };
