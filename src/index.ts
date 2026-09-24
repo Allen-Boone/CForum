@@ -1,8 +1,3 @@
-import { sendEmail } from './smtp';
-import { generateIdenticon } from './identicon';
-import { uploadImage, deleteImage, listAllKeys, getPublicUrl, getKeyFromUrl, S3Env } from './s3';
-import * as OTPAuth from 'otpauth';
-import { Security, UserPayload } from './security';
 import { SignJWT, jwtVerify } from 'jose';
 
 interface DBUser {
@@ -13,22 +8,11 @@ interface DBUser {
     verified: number;
     role?: string;
     avatar_url?: string;
-    totp_secret?: string;
-    totp_enabled?: number;
-    email_notifications?: number;
-    reset_token?: string;
-    reset_token_expires?: number;
-    pending_email?: string;
-    verification_token?: string;
-    email_change_token?: string;
     points?: number;
     title?: string;
     last_checkin_date?: string;
 }
 
-interface DBSetting { value: string; }
-
-// 永远固定、永不失效的安全密钥（彻底杜绝过期误判）
 const MASTER_SECRET_KEY = new TextEncoder().encode('cforum_master_jwt_secret_key_2026_forever_valid');
 
 function jsonResponse(data: any, status = 200, headers: Record<string, string> = {}): Response {
@@ -46,17 +30,9 @@ function jsonResponse(data: any, status = 200, headers: Record<string, string> =
 
 async function hashPassword(password: string): Promise<string> {
     const encoder = new TextEncoder();
-    const data = encoder.encode(password);
+    const data = encoder.encode(password.trim());
     const hash = await crypto.subtle.digest('SHA-256', data);
     return Array.from(new Uint8Array(hash))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
-}
-
-function generateToken(): string {
-    const array = new Uint8Array(32);
-    crypto.getRandomValues(array);
-    return Array.from(array)
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
 }
@@ -66,7 +42,6 @@ export default {
 		const url = new URL(request.url);
 		const method = request.method;
 
-		// 跨域预检直接放行
 		if (method === 'OPTIONS') {
 			return new Response(null, {
 				status: 204,
@@ -78,7 +53,6 @@ export default {
 			});
 		}
 
-		// 坚固可靠的用户认证函数
 		const authenticate = async (req: Request) => {
 			const authHeader = req.headers.get('Authorization');
 			if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -120,51 +94,106 @@ export default {
 			}
 		}
 
-		// POST /api/register (免验证注册，初始 0 积分)
-		if (url.pathname === '/api/register' && method === 'POST') {
+		// GET /api/me (实时从数据库获取当前用户的最新积分、称号与签到状态)
+		if (url.pathname === '/api/me' && method === 'GET') {
 			try {
-				const body = await request.json() as any;
-				const { email, username, password } = body;
-				if (!email || !username || !password) return jsonResponse({ error: '请填写完整注册信息' }, 400);
+				const userPayload = await authenticate(request);
+				const user = await env.cforum_db.prepare(
+					'SELECT id, username, email, role, avatar_url, points, title, last_checkin_date FROM users WHERE id = ?'
+				).bind(userPayload.id).first<DBUser>();
 
-				const existing = await env.cforum_db.prepare('SELECT email, username FROM users WHERE email = ? OR username = ?').bind(email, username).first();
-				if (existing) {
-					if ((existing as any).email === email) return jsonResponse({ error: '邮箱已被注册' }, 409);
-					return jsonResponse({ error: '用户名已被使用' }, 409);
-				}
+				if (!user) return jsonResponse({ error: 'User not found' }, 404);
+				const today = new Date().toISOString().slice(0, 10);
 
-				const passwordHash = await hashPassword(password);
-				const verificationToken = generateToken();
-
-				const { success, meta } = await env.cforum_db.prepare(
-					'INSERT INTO users (email, username, password, role, verified, verification_token, points, title) VALUES (?, ?, ?, ?, 1, ?, 0, ?)'
-				).bind(email, username, passwordHash, 'user', verificationToken, '🌱 初来乍到').run();
-
-				if (!success) return jsonResponse({ error: '注册失败' }, 500);
-
-				return jsonResponse({ message: '注册成功！请直接登录。', userId: meta.last_row_id }, 201);
+				return jsonResponse({
+					id: user.id,
+					username: user.username,
+					email: user.email,
+					role: user.role || 'user',
+					avatar_url: user.avatar_url,
+					points: user.points ?? 0,
+					title: user.title || '🌱 初来乍到',
+					checked_in_today: user.last_checkin_date === today
+				});
 			} catch (e) {
 				return handleError(e);
 			}
 		}
 
-		// POST /api/login (颁发永久有效令牌)
+		// POST /api/register (注册后直接生成登录 Token，免二次登录！)
+		if (url.pathname === '/api/register' && method === 'POST') {
+			try {
+				const body = await request.json() as any;
+				const email = String(body.email || '').trim();
+				const username = String(body.username || '').trim();
+				const password = String(body.password || '').trim();
+
+				if (!email || !username || !password) return jsonResponse({ error: '请填写完整用户名、邮箱和密码' }, 400);
+				if (password.length < 6) return jsonResponse({ error: '密码长度至少 6 位' }, 400);
+
+				const existing = await env.cforum_db.prepare(
+					'SELECT email, username FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)'
+				).bind(email, username).first();
+
+				if (existing) {
+					return jsonResponse({ error: '该用户名或邮箱已被注册，请直接登录或换一个' }, 409);
+				}
+
+				const passwordHash = await hashPassword(password);
+
+				const { success, meta } = await env.cforum_db.prepare(
+					'INSERT INTO users (email, username, password, role, verified, points, title) VALUES (?, ?, ?, ?, 1, 0, ?)'
+				).bind(email, username, passwordHash, 'user', '🌱 初来乍到').run();
+
+				if (!success) return jsonResponse({ error: '注册失败' }, 500);
+
+				const newUserId = Number(meta.last_row_id);
+				const token = await new SignJWT({
+					id: newUserId,
+					role: 'user',
+					email: email
+				})
+					.setProtectedHeader({ alg: 'HS256' })
+					.setIssuedAt()
+					.setExpirationTime('30d')
+					.sign(MASTER_SECRET_KEY);
+
+				return jsonResponse({
+					message: '注册成功！',
+					token,
+					user: {
+						id: newUserId,
+						username,
+						email,
+						role: 'user',
+						points: 0,
+						title: '🌱 初来乍到',
+						checked_in_today: false
+					}
+				}, 201);
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// POST /api/login (支持输入“用户名”或“邮箱”任意一种登录！)
 		if (url.pathname === '/api/login' && method === 'POST') {
 			try {
 				const body = await request.json() as any;
-				const { email, password } = body;
-				if (!email || !password) return jsonResponse({ error: '请输入邮箱与密码' }, 400);
+				const account = String(body.email || body.username || '').trim();
+				const password = String(body.password || '').trim();
+
+				if (!account || !password) return jsonResponse({ error: '请输入账号和密码' }, 400);
 
 				const user = await env.cforum_db.prepare(
-					'SELECT id, username, email, password, verified, role, avatar_url, points, title, last_checkin_date FROM users WHERE email = ?'
-				).bind(email).first<DBUser>();
+					'SELECT id, username, email, password, verified, role, avatar_url, points, title, last_checkin_date FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)'
+				).bind(account, account).first<DBUser>();
 
-				if (!user) return jsonResponse({ error: '邮箱或密码错误' }, 401);
+				if (!user) return jsonResponse({ error: '账号不存在，请先注册' }, 401);
 
 				const passwordHash = await hashPassword(password);
-				if (user.password !== passwordHash) return jsonResponse({ error: '邮箱或密码错误' }, 401);
+				if (user.password !== passwordHash) return jsonResponse({ error: '密码不正确，请重新输入' }, 401);
 
-				// 使用固定密钥签名，永不失效
 				const token = await new SignJWT({
 					id: user.id,
 					role: user.role || 'user',
@@ -195,14 +224,16 @@ export default {
 			}
 		}
 
-		// POST /api/checkin
+		// POST /api/checkin (每日签到：随机 2~10 积分，直接入库并返回最新积分)
 		if (url.pathname === '/api/checkin' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
 				const today = new Date().toISOString().slice(0, 10);
 
 				const user = await env.cforum_db.prepare('SELECT points, last_checkin_date FROM users WHERE id = ?').bind(userPayload.id).first<DBUser>();
-				if (user?.last_checkin_date === today) return jsonResponse({ error: '今日已经签过到了，明天再来吧！' }, 400);
+				if (user?.last_checkin_date === today) {
+					return jsonResponse({ error: '今日已经签过到了，明天再来领积分吧！', points: user?.points ?? 0 }, 400);
+				}
 
 				const reward = Math.floor(Math.random() * 9) + 2; 
 				await env.cforum_db.prepare('UPDATE users SET points = COALESCE(points, 0) + ?, last_checkin_date = ? WHERE id = ?').bind(reward, today, userPayload.id).run();
@@ -227,7 +258,7 @@ export default {
 		// GET /api/posts
 		if (url.pathname === '/api/posts' && method === 'GET') {
 			try {
-				const limit = parseInt(url.searchParams.get('limit') || '10');
+				const limit = parseInt(url.searchParams.get('limit') || '30');
 				const offset = parseInt(url.searchParams.get('offset') || '0');
 				const categoryId = url.searchParams.get('category_id');
 
@@ -253,16 +284,7 @@ export default {
 				params.push(limit, offset);
 
 				const posts = await env.cforum_db.prepare(query).bind(...params).all();
-
-				let countQuery = 'SELECT COUNT(*) as count FROM posts';
-				const countParams: any[] = [];
-				if (categoryId) {
-					countQuery += ' WHERE category_id = ?';
-					countParams.push(categoryId);
-				}
-				const total = await env.cforum_db.prepare(countQuery).bind(...countParams).first<number>('count');
-
-				return jsonResponse({ items: posts.results, total: total || 0 });
+				return jsonResponse({ items: posts.results, total: posts.results.length });
 			} catch (e) {
 				return handleError(e);
 			}
@@ -292,7 +314,7 @@ export default {
 				await authenticate(request);
 				const formData = await request.formData();
 				const file = formData.get('file') as File;
-				if (!file) return jsonResponse({ error: '请选择要上传的图片' }, 400);
+				if (!file) return jsonResponse({ error: '请选择图片' }, 400);
 
 				const ext = file.name.split('.').pop() || 'png';
 				const key = `uploads/${Date.now()}-${crypto.randomUUID()}.${ext}`;
@@ -308,7 +330,6 @@ export default {
 			}
 		}
 
-		// GET /r2/*
 		if (url.pathname.startsWith('/r2/')) {
 			const key = url.pathname.replace('/r2/', '');
 			const object = await (env as any).BUCKET.get(key);
@@ -335,11 +356,7 @@ export default {
 					env.cforum_db.prepare('SELECT COUNT(*) as count FROM comments').first<number>('count')
 				]);
 
-				return jsonResponse({
-					users: userCount || 0,
-					posts: postCount || 0,
-					comments: commentCount || 0
-				});
+				return jsonResponse({ users: userCount || 0, posts: postCount || 0, comments: commentCount || 0 });
 			} catch (e) {
 				return handleError(e);
 			}
@@ -359,7 +376,6 @@ export default {
 			}
 		}
 
-		// 站长调分接口
 		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/points$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -368,40 +384,19 @@ export default {
 				const targetUserId = url.pathname.split('/')[4];
 				const body = await request.json() as any;
 				const amount = parseInt(body.amount);
-
-				if (isNaN(amount)) return jsonResponse({ error: '请输入有效的整数数值' }, 400);
+				if (isNaN(amount)) return jsonResponse({ error: '请输入有效的整数' }, 400);
 
 				await env.cforum_db.prepare(
 					'UPDATE users SET points = MAX(0, COALESCE(points, 0) + ?) WHERE id = ?'
 				).bind(amount, targetUserId).run();
 
-				const updated = await env.cforum_db.prepare(
-					'SELECT points FROM users WHERE id = ?'
-				).bind(targetUserId).first<{ points: number }>();
-
+				const updated = await env.cforum_db.prepare('SELECT points FROM users WHERE id = ?').bind(targetUserId).first<{ points: number }>();
 				return jsonResponse({ success: true, points: updated?.points ?? 0 });
 			} catch (e) {
 				return handleError(e);
 			}
 		}
 
-		if (url.pathname === '/api/admin/settings' && method === 'GET') {
-			try {
-				const userPayload = await authenticate(request);
-				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
-
-				const settings = await env.cforum_db.prepare('SELECT key, value FROM settings').all();
-				const result: Record<string, string> = {};
-				settings.results.forEach((row: any) => { result[row.key] = row.value; });
-				return jsonResponse(result);
-			} catch (e) {
-				return handleError(e);
-			}
-		}
-
-		return new Response('Not Found', { 
-			status: 404,
-			headers: { 'Access-Control-Allow-Origin': '*' }
-		});
+		return new Response('Not Found', { status: 404, headers: { 'Access-Control-Allow-Origin': '*' } });
 	}
 };
