@@ -1,15 +1,28 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Image as ImageIcon, Sparkles, Trophy, Lock } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Image as ImageIcon, Sparkles, Trophy, Lock, Pin, Trash2 } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { apiFetch, formatDate, getSecurityHeaders, type Category, type Post } from '@/lib/api';
 import { getToken, getUser, setUser } from '@/lib/auth';
 
+// 全站统一的 9 大黄金板块
+const DEFAULT_CATEGORIES: Category[] = [
+	{ id: 1, name: '茶水间', created_at: '' },
+	{ id: 2, name: '技术贴', created_at: '' },
+	{ id: 3, name: '问与答', created_at: '' },
+	{ id: 4, name: 'AI聊聊', created_at: '' },
+	{ id: 5, name: '副业来了', created_at: '' },
+	{ id: 6, name: '域名交流', created_at: '' },
+	{ id: 7, name: '福利发放', created_at: '' },
+	{ id: 8, name: '站长交流', created_at: '' },
+	{ id: 9, name: '公告', created_at: '' }
+];
+
 export function IndexPage() {
 	const token = getToken();
 	const [user, setCurrentUser] = React.useState(() => getUser());
-	const [categories, setCategories] = React.useState<Category[]>([]);
+	const [categories, setCategories] = React.useState<Category[]>(DEFAULT_CATEGORIES);
 	const [selectedCategory, setSelectedCategory] = React.useState<string>('all');
 	const [posts, setPosts] = React.useState<Post[]>([]);
 	const [loading, setLoading] = React.useState<boolean>(true);
@@ -17,7 +30,8 @@ export function IndexPage() {
 	const [showEditor, setShowEditor] = React.useState<boolean>(false);
 	const [newTitle, setNewTitle] = React.useState('');
 	const [newContent, setNewContent] = React.useState('');
-	const [newCategoryId, setNewCategoryId] = React.useState<string>('1');
+	const [newCategoryId, setNewCategoryId] = React.useState<string>('9');
+	const [pinOnCreate, setPinOnCreate] = React.useState<boolean>(false);
 
 	const [points, setPoints] = React.useState<number>(() => (user as any)?.points ?? 0);
 	const [userTitle, setUserTitle] = React.useState<string>(() => (user as any)?.title || (user?.role === 'admin' ? '👑 创始站长' : '🌱 初来乍到'));
@@ -25,12 +39,13 @@ export function IndexPage() {
 	const [uploading, setUploading] = React.useState<boolean>(false);
 	const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-	// 页面打开时，自动从数据库同步最新积分与签到状态
 	React.useEffect(() => {
 		async function init() {
 			try {
 				const cats = await apiFetch<Category[]>('/categories');
-				setCategories(cats || []);
+				if (cats && cats.length >= 5) {
+					setCategories(cats);
+				}
 			} catch (_) {}
 
 			if (token) {
@@ -55,7 +70,7 @@ export function IndexPage() {
 	async function loadPosts() {
 		setLoading(true);
 		try {
-			const res = await apiFetch<{ items: Post[]; total: number }>('/posts?limit=30&offset=0');
+			const res = await apiFetch<{ items: Post[]; total: number }>('/posts?limit=50&offset=0');
 			setPosts(res.items || []);
 		} catch (_) {
 		} finally {
@@ -128,7 +143,7 @@ export function IndexPage() {
 		e.preventDefault();
 		if (!newTitle.trim() || !newContent.trim()) return;
 		try {
-			await apiFetch('/posts', {
+			const res = await apiFetch<{ success: boolean; id: number }>('/posts', {
 				method: 'POST',
 				headers: getSecurityHeaders('POST'),
 				body: JSON.stringify({
@@ -137,31 +152,69 @@ export function IndexPage() {
 					category_id: Number(newCategoryId) || 1
 				})
 			});
+
+			// 如果站长勾选了直接置顶，自动调用置顶接口！
+			if (pinOnCreate && res?.id && user?.role === 'admin') {
+				await apiFetch(`/posts/${res.id}/pin`, {
+					method: 'POST',
+					headers: getSecurityHeaders('POST')
+				}).catch(() => {});
+			}
+
 			setNewTitle('');
 			setNewContent('');
+			setPinOnCreate(false);
 			setShowEditor(false);
+			setSelectedCategory('all');
 			loadPosts();
 		} catch (err: any) {
 			alert(err.message || '发布失败');
 		}
 	}
 
+	// 站长在列表直接点击置顶/取消置顶
+	async function handleTogglePin(postId: number) {
+		try {
+			await apiFetch(`/posts/${postId}/pin`, {
+				method: 'POST',
+				headers: getSecurityHeaders('POST')
+			});
+			loadPosts();
+		} catch (err: any) {
+			alert('操作失败: ' + err.message);
+		}
+	}
+
+	// 站长在列表直接点击删帖
+	async function handleDeletePost(postId: number, title: string) {
+		if (!confirm(`确定要删除帖子《${title}》吗？`)) return;
+		try {
+			await apiFetch(`/posts/${postId}`, {
+				method: 'DELETE',
+				headers: getSecurityHeaders('DELETE')
+			});
+			loadPosts();
+		} catch (err: any) {
+			alert('删除失败: ' + err.message);
+		}
+	}
+
 	const navPills = [
 		{ id: 'all', name: '全部主题' },
-		{ id: '1', name: '茶水间' },
-		{ id: '2', name: '技术贴' },
-		{ id: '3', name: '问与答' },
-		{ id: 'ai', name: 'AI聊聊' },
-		{ id: 'side', name: '副业来了' },
-		{ id: 'domain', name: '域名交流' },
-		{ id: 'welfare', name: '福利发放' },
-		{ id: 'notice', name: '公告' }
+		...DEFAULT_CATEGORIES.map(c => ({ id: String(c.id), name: c.name }))
 	];
 
 	const filteredPosts = posts.filter(p => {
 		if (selectedCategory === 'all') return true;
 		return String(p.category_id) === selectedCategory;
 	});
+
+	// 获取分类名称（即使数据库还没查出也能精准匹配）
+	function getCategoryName(catId: number | null | undefined, fallbackName?: string | null) {
+		if (fallbackName) return fallbackName;
+		const found = DEFAULT_CATEGORIES.find(c => c.id === Number(catId));
+		return found ? found.name : '茶水间';
+	}
 
 	return (
 		<PageShell>
@@ -214,9 +267,9 @@ export function IndexPage() {
 								<select
 									value={newCategoryId}
 									onChange={e => setNewCategoryId(e.target.value)}
-									className="bg-[#0d1117] border border-[#30363d] text-white text-xs rounded px-2 py-1"
+									className="bg-[#0d1117] border border-[#30363d] text-white text-xs rounded px-2.5 py-1.5 font-medium"
 								>
-									{categories.map(c => (
+									{DEFAULT_CATEGORIES.map(c => (
 										<option key={c.id} value={c.id}>{c.name}</option>
 									))}
 								</select>
@@ -230,7 +283,7 @@ export function IndexPage() {
 
 							<div className="relative">
 								<textarea
-									rows={5}
+									rows={6}
 									placeholder="正文内容（支持 Markdown 语法，可以点击下方按钮上传图片）..."
 									value={newContent}
 									onChange={e => setNewContent(e.target.value)}
@@ -238,8 +291,8 @@ export function IndexPage() {
 								/>
 							</div>
 
-							<div className="flex items-center justify-between pt-1">
-								<div>
+							<div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+								<div className="flex items-center gap-3">
 									<input
 										type="file"
 										ref={fileInputRef}
@@ -258,6 +311,19 @@ export function IndexPage() {
 										<ImageIcon className="w-3.5 h-3.5 mr-1" />
 										{uploading ? '上传中...' : '插入图片'}
 									</Button>
+
+									{/* 站长专属：发帖时直接勾选设为置顶公告 */}
+									{user.role === 'admin' && (
+										<label className="flex items-center gap-1.5 text-xs text-amber-400 cursor-pointer select-none">
+											<input
+												type="checkbox"
+												checked={pinOnCreate}
+												onChange={e => setPinOnCreate(e.target.checked)}
+												className="rounded border-gray-600"
+											/>
+											📌 发布后直接设为全站置顶帖
+										</label>
+									)}
 								</div>
 
 								<div className="flex gap-2">
@@ -268,7 +334,6 @@ export function IndexPage() {
 						</form>
 					)}
 
-					{/* 核心权限锁：未登录游客禁止查看论坛内容！ */}
 					{!user ? (
 						<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-12 text-center space-y-4 shadow-lg">
 							<div className="w-14 h-14 rounded-full bg-blue-600/10 border border-blue-500/30 flex items-center justify-center mx-auto text-blue-400">
@@ -296,7 +361,7 @@ export function IndexPage() {
 							) : filteredPosts.length === 0 ? (
 								<div className="p-12 text-center text-gray-400 space-y-2">
 									<Coffee className="w-8 h-8 mx-auto text-gray-500 stroke-1" />
-									<p className="text-sm">暂无主题，快来发布自由论坛第一帖吧！</p>
+									<p className="text-sm">该分类下暂无主题，快来发布第一帖吧！</p>
 								</div>
 							) : (
 								filteredPosts.map(post => (
@@ -329,20 +394,38 @@ export function IndexPage() {
 												)}
 											</div>
 
-											<div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400">
+											<div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400 flex-wrap">
 												<span className="text-[11px] font-medium px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
 													{post.author_title || '🌱 初来乍到'}
 												</span>
 												<span className="font-medium text-gray-300">{post.author_name || '会员'}</span>
 												<span>•</span>
 												<span>{formatDate(post.created_at)}</span>
-												{post.category_name && (
-													<>
-														<span>•</span>
-														<span className="bg-[#21262d] text-gray-300 px-1.5 py-0.5 rounded text-[11px] border border-[#30363d]">
-															{post.category_name}
-														</span>
-													</>
+												<span>•</span>
+												<span className="bg-[#21262d] text-gray-300 px-1.5 py-0.5 rounded text-[11px] border border-[#30363d]">
+													{getCategoryName(post.category_id, post.category_name)}
+												</span>
+
+												{/* 站长快捷操作：在首页直接一键置顶或删除 */}
+												{user.role === 'admin' && (
+													<span className="ml-auto flex items-center gap-2 opacity-80 hover:opacity-100">
+														<button
+															type="button"
+															onClick={() => handleTogglePin(post.id)}
+															className="text-[11px] text-amber-400 hover:underline flex items-center gap-0.5"
+														>
+															<Pin className="w-3 h-3" />
+															{post.is_pinned === 1 ? '取消置顶' : '置顶'}
+														</button>
+														<button
+															type="button"
+															onClick={() => handleDeletePost(post.id, post.title)}
+															className="text-[11px] text-red-400 hover:underline flex items-center gap-0.5"
+														>
+															<Trash2 className="w-3 h-3" />
+															删除
+														</button>
+													</span>
 												)}
 											</div>
 										</div>
