@@ -189,7 +189,7 @@ export default {
 			return restrictedKeywords.some(keyword => lowerUsername.includes(keyword));
 		};
 
-		// POST /api/register (初始积分严格设为 0 分，免邮箱验证)
+		// POST /api/register (初始积分严格为 0 分，免邮箱验证)
 		if (url.pathname === '/api/register' && method === 'POST') {
 			try {
 				const body = await request.json() as any;
@@ -221,7 +221,7 @@ export default {
 				const passwordHash = await hashPassword(password);
 				const verificationToken = generateToken();
 
-				// 初始积分设为 0 分！
+				// 初始 0 积分与新手称号
 				const { success, meta } = await env.cforum_db.prepare(
 					'INSERT INTO users (email, username, password, role, verified, verification_token, points, title) VALUES (?, ?, ?, ?, 1, ?, 0, ?)'
 				).bind(email, username, passwordHash, 'user', verificationToken, '🌱 初来乍到').run();
@@ -317,7 +317,7 @@ export default {
 			}
 		}
 
-		// POST /api/checkin (每日签到：随机奖励 2~10 积分，真实存入数据库)
+		// POST /api/checkin (每日签到：随机奖励 2~10 积分)
 		if (url.pathname === '/api/checkin' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -331,7 +331,6 @@ export default {
 					return jsonResponse({ error: '今日已经签过到了，明天再来吧！' }, 400);
 				}
 
-				// 随机产生 2 到 10 点小额积分
 				const reward = Math.floor(Math.random() * 9) + 2; 
 
 				await env.cforum_db.prepare(
@@ -430,7 +429,7 @@ export default {
 			}
 		}
 
-		// POST /api/upload (R2 图片上传免流量费)
+		// POST /api/upload (R2 图片上传)
 		if (url.pathname === '/api/upload' && method === 'POST') {
 			try {
 				await authenticate(request);
@@ -500,6 +499,34 @@ export default {
 					'SELECT id, email, username, role, verified, created_at, avatar_url, points, title FROM users ORDER BY id DESC'
 				).all();
 				return jsonResponse(users.results);
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// POST /api/admin/users/:id/points (站长专享：充值/扣除积分接口)
+		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/points$/) && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
+
+				const targetUserId = url.pathname.split('/')[4];
+				const body = await request.json() as any;
+				const amount = parseInt(body.amount);
+
+				if (isNaN(amount)) {
+					return jsonResponse({ error: '请输入有效的整数数值' }, 400);
+				}
+
+				await env.cforum_db.prepare(
+					'UPDATE users SET points = MAX(0, COALESCE(points, 0) + ?) WHERE id = ?'
+				).bind(amount, targetUserId).run();
+
+				const updated = await env.cforum_db.prepare(
+					'SELECT points FROM users WHERE id = ?'
+				).bind(targetUserId).first<{ points: number }>();
+
+				return jsonResponse({ success: true, points: updated?.points ?? 0 });
 			} catch (e) {
 				return handleError(e);
 			}
