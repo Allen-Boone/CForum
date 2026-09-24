@@ -1,12 +1,11 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Image as ImageIcon, Sparkles, Trophy, Lock, Pin, Trash2 } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Image as ImageIcon, Sparkles, Trophy, Lock, Pin, Trash2, Award, Gift } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { apiFetch, formatDate, getSecurityHeaders, type Category, type Post } from '@/lib/api';
 import { getToken, getUser, setUser } from '@/lib/auth';
 
-// 全站统一的 9 大黄金板块
 const DEFAULT_CATEGORIES: Category[] = [
 	{ id: 1, name: '茶水间', created_at: '' },
 	{ id: 2, name: '技术贴', created_at: '' },
@@ -24,9 +23,9 @@ export function IndexPage() {
 	const [user, setCurrentUser] = React.useState(() => getUser());
 	const [categories, setCategories] = React.useState<Category[]>(DEFAULT_CATEGORIES);
 	const [selectedCategory, setSelectedCategory] = React.useState<string>('all');
-	const [posts, setPosts] = React.useState<Post[]>([]);
+	const [posts, setPosts] = React.useState<Array<Post & { badge?: string | null; reward_points?: number }>>([]);
 	const [loading, setLoading] = React.useState<boolean>(true);
-	const [activeTab, setActiveTab] = React.useState<'comment' | 'post'>('comment');
+	const [activeTab, setActiveTab] = React.useState<'comment' | 'post' | 'featured'>('comment');
 	const [showEditor, setShowEditor] = React.useState<boolean>(false);
 	const [newTitle, setNewTitle] = React.useState('');
 	const [newContent, setNewContent] = React.useState('');
@@ -70,7 +69,7 @@ export function IndexPage() {
 	async function loadPosts() {
 		setLoading(true);
 		try {
-			const res = await apiFetch<{ items: Post[]; total: number }>('/posts?limit=50&offset=0');
+			const res = await apiFetch<{ items: any[]; total: number }>('/posts?limit=50&offset=0');
 			setPosts(res.items || []);
 		} catch (_) {
 		} finally {
@@ -153,7 +152,6 @@ export function IndexPage() {
 				})
 			});
 
-			// 如果站长勾选了直接置顶，自动调用置顶接口！
 			if (pinOnCreate && res?.id && user?.role === 'admin') {
 				await apiFetch(`/posts/${res.id}/pin`, {
 					method: 'POST',
@@ -172,7 +170,6 @@ export function IndexPage() {
 		}
 	}
 
-	// 站长在列表直接点击置顶/取消置顶
 	async function handleTogglePin(postId: number) {
 		try {
 			await apiFetch(`/posts/${postId}/pin`, {
@@ -185,7 +182,45 @@ export function IndexPage() {
 		}
 	}
 
-	// 站长在列表直接点击删帖
+	// 站长好帖加精 & 自动发奖弹窗
+	async function handleSetBadgeAndReward(postId: number, authorName: string) {
+		const choice = prompt(
+			`【站长好帖授勋 & 自动发奖】\n正在为作者【${authorName}】的帖子授勋：\n\n请输入数字选择勋章（系统将自动向作者账户发放对应积分奖励）：\n1 = 💎 精华（自动奖励作者 +50 积分）\n2 = 🔥 推荐（自动奖励作者 +20 积分）\n3 = 🏆 神帖（自动奖励作者 +100 积分）\n4 = ✨ 原创（自动奖励作者 +30 积分）\n0 = 取消该帖勋章`,
+			'1'
+		);
+		if (choice === null) return;
+
+		const map: Record<string, { badge: string | null; bonus: number }> = {
+			'1': { badge: '精华', bonus: 50 },
+			'2': { badge: '推荐', bonus: 20 },
+			'3': { badge: '神帖', bonus: 100 },
+			'4': { badge: '原创', bonus: 30 },
+			'0': { badge: null, bonus: 0 }
+		};
+
+		const selected = map[choice.trim()];
+		if (!selected) {
+			alert('请输入 0 ~ 4 之间的数字！');
+			return;
+		}
+
+		try {
+			await apiFetch(`/posts/${postId}/badge`, {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify(selected)
+			});
+			if (selected.badge) {
+				alert(`🎉 已成功授予【${selected.badge}】勋章！并向作者【${authorName}】自动发放 +${selected.bonus} 论坛积分！`);
+			} else {
+				alert('已取消该帖勋章');
+			}
+			loadPosts();
+		} catch (err: any) {
+			alert('操作失败: ' + err.message);
+		}
+	}
+
 	async function handleDeletePost(postId: number, title: string) {
 		if (!confirm(`确定要删除帖子《${title}》吗？`)) return;
 		try {
@@ -199,17 +234,54 @@ export function IndexPage() {
 		}
 	}
 
+	// 根据不同荣誉徽章渲染绚丽色彩
+	function renderBadge(badge?: string | null) {
+		if (!badge) return null;
+		switch (badge) {
+			case '精华':
+				return (
+					<span className="bg-purple-600/90 text-white text-[11px] font-bold px-1.5 py-0.2 rounded shadow-sm flex items-center gap-0.5">
+						💎 精华
+					</span>
+				);
+			case '推荐':
+				return (
+					<span className="bg-rose-600/90 text-white text-[11px] font-bold px-1.5 py-0.2 rounded shadow-sm flex items-center gap-0.5">
+						🔥 推荐
+					</span>
+				);
+			case '神帖':
+				return (
+					<span className="bg-gradient-to-r from-amber-500 to-yellow-600 text-black text-[11px] font-extrabold px-1.5 py-0.2 rounded shadow-sm flex items-center gap-0.5">
+						🏆 神帖
+					</span>
+				);
+			case '原创':
+				return (
+					<span className="bg-emerald-600/90 text-white text-[11px] font-bold px-1.5 py-0.2 rounded shadow-sm flex items-center gap-0.5">
+						✨ 原创
+					</span>
+				);
+			default:
+				return (
+					<span className="bg-blue-600 text-white text-[11px] font-bold px-1.5 py-0.2 rounded">
+						{badge}
+					</span>
+				);
+		}
+	}
+
 	const navPills = [
 		{ id: 'all', name: '全部主题' },
 		...DEFAULT_CATEGORIES.map(c => ({ id: String(c.id), name: c.name }))
 	];
 
 	const filteredPosts = posts.filter(p => {
+		if (activeTab === 'featured' && !p.badge) return false;
 		if (selectedCategory === 'all') return true;
 		return String(p.category_id) === selectedCategory;
 	});
 
-	// 获取分类名称（即使数据库还没查出也能精准匹配）
 	function getCategoryName(catId: number | null | undefined, fallbackName?: string | null) {
 		if (fallbackName) return fallbackName;
 		const found = DEFAULT_CATEGORIES.find(c => c.id === Number(catId));
@@ -242,13 +314,13 @@ export function IndexPage() {
 								onClick={() => setActiveTab('comment')}
 								className={`pb-1 ${activeTab === 'comment' ? 'text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-gray-200'}`}
 							>
-								新评论
+								全部动态
 							</button>
 							<button
-								onClick={() => setActiveTab('post')}
-								className={`pb-1 ${activeTab === 'post' ? 'text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-gray-200'}`}
+								onClick={() => setActiveTab('featured')}
+								className={`pb-1 flex items-center gap-1 ${activeTab === 'featured' ? 'text-purple-400 border-b-2 border-purple-500' : 'text-gray-400 hover:text-purple-300'}`}
 							>
-								新帖子
+								💎 精华神帖区
 							</button>
 						</div>
 						{user && (
@@ -312,7 +384,6 @@ export function IndexPage() {
 										{uploading ? '上传中...' : '插入图片'}
 									</Button>
 
-									{/* 站长专属：发帖时直接勾选设为置顶公告 */}
 									{user.role === 'admin' && (
 										<label className="flex items-center gap-1.5 text-xs text-amber-400 cursor-pointer select-none">
 											<input
@@ -376,21 +447,30 @@ export function IndexPage() {
 
 										<div className="flex-1 min-w-0">
 											<div className="flex items-center gap-1.5 flex-wrap">
+												{/* 置顶标签 */}
 												{post.is_pinned === 1 && (
 													<span className="bg-[#b35900] text-white text-[11px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
 														置顶
 													</span>
 												)}
+
+												{/* 精华 / 推荐 / 神帖 / 原创 荣誉勋章 */}
+												{renderBadge(post.badge)}
+
 												<a
 													href={`/post?id=${post.id}`}
 													className={`text-[15px] font-medium leading-snug group-hover:text-blue-400 transition-colors ${
-														post.is_pinned === 1 ? 'text-[#ff7b72] font-semibold' : 'text-gray-100'
+														post.is_pinned === 1 ? 'text-[#ff7b72] font-semibold' : post.badge ? 'text-amber-200 font-semibold' : 'text-gray-100'
 													}`}
 												>
 													{post.title}
 												</a>
-												{post.is_pinned === 1 && (
-													<span className="bg-[#bd561d]/30 text-[#f0883e] text-[10px] px-1 rounded font-bold">热</span>
+
+												{/* 站长打赏奖励展示 */}
+												{(post.reward_points ?? 0) > 0 && (
+													<span className="bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[10px] px-1.5 py-0.2 rounded-full font-bold flex items-center gap-0.5">
+														🎁 已赏 +{post.reward_points}分
+													</span>
 												)}
 											</div>
 
@@ -406,9 +486,17 @@ export function IndexPage() {
 													{getCategoryName(post.category_id, post.category_name)}
 												</span>
 
-												{/* 站长快捷操作：在首页直接一键置顶或删除 */}
+												{/* 站长快捷操作栏：加精发奖、置顶、删除 */}
 												{user.role === 'admin' && (
-													<span className="ml-auto flex items-center gap-2 opacity-80 hover:opacity-100">
+													<span className="ml-auto flex items-center gap-2.5 opacity-85 hover:opacity-100">
+														<button
+															type="button"
+															onClick={() => handleSetBadgeAndReward(post.id, post.author_name || '会员')}
+															className="text-[11px] text-purple-400 hover:underline flex items-center gap-0.5 font-medium"
+														>
+															<Award className="w-3 h-3" />
+															加精/发奖
+														</button>
 														<button
 															type="button"
 															onClick={() => handleTogglePin(post.id)}
@@ -522,10 +610,10 @@ export function IndexPage() {
 						<div className="grid grid-cols-2 gap-y-2 text-gray-400">
 							<span onClick={handleCheckin} className="hover:text-emerald-400 cursor-pointer text-emerald-500 font-medium">• 每日签到（领积分）</span>
 							<span onClick={handleSwitchTitle} className="hover:text-blue-400 cursor-pointer">• 我的称号仓库</span>
+							<span onClick={() => setActiveTab('featured')} className="hover:text-purple-400 cursor-pointer text-purple-400 font-medium">• 💎 精华神帖列表</span>
 							<span className="hover:text-white cursor-pointer">• 社区热榜</span>
 							<span className="hover:text-white cursor-pointer">• 用户榜单</span>
 							<span className="hover:text-white cursor-pointer">• 站点地图</span>
-							<span className="hover:text-white cursor-pointer">• 精华列表</span>
 						</div>
 					</div>
 
