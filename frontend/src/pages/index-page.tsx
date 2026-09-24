@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Image as ImageIcon, Sparkles, Trophy } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Image as ImageIcon, Sparkles, Trophy, Lock } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +8,7 @@ import { getToken, getUser, setUser } from '@/lib/auth';
 
 export function IndexPage() {
 	const token = getToken();
-	const user = React.useMemo(() => getUser(), [token]);
+	const [user, setCurrentUser] = React.useState(() => getUser());
 	const [categories, setCategories] = React.useState<Category[]>([]);
 	const [selectedCategory, setSelectedCategory] = React.useState<string>('all');
 	const [posts, setPosts] = React.useState<Post[]>([]);
@@ -25,16 +25,32 @@ export function IndexPage() {
 	const [uploading, setUploading] = React.useState<boolean>(false);
 	const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+	// 页面打开时，自动从数据库同步最新积分与签到状态
 	React.useEffect(() => {
 		async function init() {
 			try {
 				const cats = await apiFetch<Category[]>('/categories');
 				setCategories(cats || []);
 			} catch (_) {}
-			loadPosts();
+
+			if (token) {
+				try {
+					const freshUser = await apiFetch<any>('/me', { headers: getSecurityHeaders('GET') });
+					if (freshUser && freshUser.id) {
+						setPoints(freshUser.points ?? 0);
+						setUserTitle(freshUser.title || '🌱 初来乍到');
+						setCheckedIn(Boolean(freshUser.checked_in_today));
+						setUser(freshUser);
+						setCurrentUser(freshUser);
+					}
+				} catch (_) {}
+				loadPosts();
+			} else {
+				setLoading(false);
+			}
 		}
 		init();
-	}, []);
+	}, [token]);
 
 	async function loadPosts() {
 		setLoading(true);
@@ -58,19 +74,15 @@ export function IndexPage() {
 				setPoints(res.points);
 				setCheckedIn(true);
 				if (user) {
-					setUser({
-						...user,
-						points: res.points,
-						checked_in_today: true
-					} as any);
+					const updated = { ...user, points: res.points, checked_in_today: true } as any;
+					setUser(updated);
+					setCurrentUser(updated);
 				}
 				alert(`🎉 签到成功！获得 +${res.reward} 论坛积分！当前总积分：${res.points}`);
 			}
 		} catch (err: any) {
 			alert(err.message || '今日已经签过到啦！');
-			if (err.message && err.message.includes('签过')) {
-				setCheckedIn(true);
-			}
+			setCheckedIn(true);
 		}
 	}
 
@@ -95,9 +107,7 @@ export function IndexPage() {
 			formData.append('file', file);
 			const res = await fetch('https://cforum.day86530.workers.dev/api/upload', {
 				method: 'POST',
-				headers: {
-					Authorization: `Bearer ${token}`
-				},
+				headers: { Authorization: `Bearer ${token}` },
 				body: formData
 			});
 			const data = await res.json() as any;
@@ -198,7 +208,7 @@ export function IndexPage() {
 						)}
 					</div>
 
-					{showEditor && (
+					{showEditor && user && (
 						<form onSubmit={handleCreatePost} className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 space-y-3">
 							<div className="flex gap-2">
 								<select
@@ -258,71 +268,94 @@ export function IndexPage() {
 						</form>
 					)}
 
-					<div className="bg-[#161b22] border border-[#30363d] rounded-lg divide-y divide-[#21262d] overflow-hidden shadow-sm">
-						{loading ? (
-							<div className="p-8 text-center text-gray-500 text-sm">正在加载自由论坛内容...</div>
-						) : filteredPosts.length === 0 ? (
-							<div className="p-12 text-center text-gray-400 space-y-2">
-								<Coffee className="w-8 h-8 mx-auto text-gray-500 stroke-1" />
-								<p className="text-sm">暂无主题，快来发布自由论坛第一帖吧！</p>
+					{/* 核心权限锁：未登录游客禁止查看论坛内容！ */}
+					{!user ? (
+						<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-12 text-center space-y-4 shadow-lg">
+							<div className="w-14 h-14 rounded-full bg-blue-600/10 border border-blue-500/30 flex items-center justify-center mx-auto text-blue-400">
+								<Lock className="w-7 h-7" />
 							</div>
-						) : (
-							filteredPosts.map(post => (
-								<div key={post.id} className="p-3.5 hover:bg-[#1c2128] transition-colors flex items-start gap-3 group">
-									<div className="w-10 h-10 rounded-md bg-[#21262d] flex-shrink-0 flex items-center justify-center font-bold text-gray-300 overflow-hidden border border-[#30363d]">
-										{post.author_avatar ? (
-											<img src={post.author_avatar} alt="" className="w-full h-full object-cover" />
-										) : (
-											<span className="text-xs text-blue-400">{(post.author_name || 'U').slice(0, 2).toUpperCase()}</span>
-										)}
-									</div>
-
-									<div className="flex-1 min-w-0">
-										<div className="flex items-center gap-1.5 flex-wrap">
-											{post.is_pinned === 1 && (
-												<span className="bg-[#b35900] text-white text-[11px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
-													置顶
-												</span>
-											)}
-											<a
-												href={`/post?id=${post.id}`}
-												className={`text-[15px] font-medium leading-snug group-hover:text-blue-400 transition-colors ${
-													post.is_pinned === 1 ? 'text-[#ff7b72] font-semibold' : 'text-gray-100'
-												}`}
-											>
-												{post.title}
-											</a>
-											{post.is_pinned === 1 && (
-												<span className="bg-[#bd561d]/30 text-[#f0883e] text-[10px] px-1 rounded font-bold">热</span>
-											)}
-										</div>
-
-										<div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400">
-											<span className="text-[11px] font-medium px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
-												{post.author_title || '🌱 初来乍到'}
-											</span>
-											<span className="font-medium text-gray-300">{post.author_name || '会员'}</span>
-											<span>•</span>
-											<span>{formatDate(post.created_at)}</span>
-											{post.category_name && (
-												<>
-													<span>•</span>
-													<span className="bg-[#21262d] text-gray-300 px-1.5 py-0.5 rounded text-[11px] border border-[#30363d]">
-														{post.category_name}
-													</span>
-												</>
-											)}
-										</div>
-									</div>
-
-									<div className="flex items-center gap-1 text-gray-400 group-hover:text-blue-400 bg-[#21262d] px-2 py-1 rounded-full text-xs font-semibold">
-										<MessageSquare className="w-3.5 h-3.5" />
-										<span>{post.comment_count || 0}</span>
-									</div>
+							<div className="space-y-1.5">
+								<h3 className="text-lg font-bold text-white">会员专属私密社区 · 仅限注册用户查看</h3>
+								<p className="text-xs text-gray-400 max-w-md mx-auto leading-relaxed">
+									为保护社区内部极客资源与深度交流内容，自由论坛仅对注册会员开放浏览。10 秒免费注册即可解锁全部板块并领取每日签到积分！
+								</p>
+							</div>
+							<div className="flex items-center justify-center gap-3 pt-2">
+								<Button asChild className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6">
+									<a href="/register">立即免费注册</a>
+								</Button>
+								<Button asChild variant="outline" className="border-gray-700 text-gray-200 hover:bg-gray-800 px-6">
+									<a href="/login">已有账号登录</a>
+								</Button>
+							</div>
+						</div>
+					) : (
+						<div className="bg-[#161b22] border border-[#30363d] rounded-lg divide-y divide-[#21262d] overflow-hidden shadow-sm">
+							{loading ? (
+								<div className="p-8 text-center text-gray-500 text-sm">正在加载自由论坛内容...</div>
+							) : filteredPosts.length === 0 ? (
+								<div className="p-12 text-center text-gray-400 space-y-2">
+									<Coffee className="w-8 h-8 mx-auto text-gray-500 stroke-1" />
+									<p className="text-sm">暂无主题，快来发布自由论坛第一帖吧！</p>
 								</div>
-							))
-						)}
-					</div>
+							) : (
+								filteredPosts.map(post => (
+									<div key={post.id} className="p-3.5 hover:bg-[#1c2128] transition-colors flex items-start gap-3 group">
+										<div className="w-10 h-10 rounded-md bg-[#21262d] flex-shrink-0 flex items-center justify-center font-bold text-gray-300 overflow-hidden border border-[#30363d]">
+											{post.author_avatar ? (
+												<img src={post.author_avatar} alt="" className="w-full h-full object-cover" />
+											) : (
+												<span className="text-xs text-blue-400">{(post.author_name || 'U').slice(0, 2).toUpperCase()}</span>
+											)}
+										</div>
+
+										<div className="flex-1 min-w-0">
+											<div className="flex items-center gap-1.5 flex-wrap">
+												{post.is_pinned === 1 && (
+													<span className="bg-[#b35900] text-white text-[11px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+														置顶
+													</span>
+												)}
+												<a
+													href={`/post?id=${post.id}`}
+													className={`text-[15px] font-medium leading-snug group-hover:text-blue-400 transition-colors ${
+														post.is_pinned === 1 ? 'text-[#ff7b72] font-semibold' : 'text-gray-100'
+													}`}
+												>
+													{post.title}
+												</a>
+												{post.is_pinned === 1 && (
+													<span className="bg-[#bd561d]/30 text-[#f0883e] text-[10px] px-1 rounded font-bold">热</span>
+												)}
+											</div>
+
+											<div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400">
+												<span className="text-[11px] font-medium px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+													{post.author_title || '🌱 初来乍到'}
+												</span>
+												<span className="font-medium text-gray-300">{post.author_name || '会员'}</span>
+												<span>•</span>
+												<span>{formatDate(post.created_at)}</span>
+												{post.category_name && (
+													<>
+														<span>•</span>
+														<span className="bg-[#21262d] text-gray-300 px-1.5 py-0.5 rounded text-[11px] border border-[#30363d]">
+															{post.category_name}
+														</span>
+													</>
+												)}
+											</div>
+										</div>
+
+										<div className="flex items-center gap-1 text-gray-400 group-hover:text-blue-400 bg-[#21262d] px-2 py-1 rounded-full text-xs font-semibold">
+											<MessageSquare className="w-3.5 h-3.5" />
+											<span>{post.comment_count || 0}</span>
+										</div>
+									</div>
+								))
+							)}
+						</div>
+					)}
 				</div>
 
 				<div className="lg:col-span-3 space-y-4">
@@ -387,14 +420,14 @@ export function IndexPage() {
 							</div>
 						) : (
 							<div className="text-center py-2 space-y-3">
-								<h4 className="font-bold text-white text-sm">自由论坛 - 自由极客社区</h4>
-								<p className="text-xs text-gray-400">登录后畅享发帖、点赞与深度技术交流。</p>
+								<h4 className="font-bold text-white text-sm">自由论坛 - 私密极客社区</h4>
+								<p className="text-xs text-gray-400">仅限注册会员访问。立即注册畅享资源、每日签到与发帖交流。</p>
 								<div className="flex gap-2">
 									<Button asChild size="sm" variant="outline" className="flex-1 text-xs border-gray-700">
 										<a href="/login">登录</a>
 									</Button>
 									<Button asChild size="sm" className="flex-1 text-xs bg-blue-600 hover:bg-blue-700 text-white">
-										<a href="/register">注册</a>
+										<a href="/register">免费注册</a>
 									</Button>
 								</div>
 							</div>
