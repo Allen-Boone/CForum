@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Pin, Flame, Eye, Search, Plus, User as UserIcon, Award, Shield, Sparkles, Coffee, Code, HelpCircle } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Image as ImageIcon, Sparkles, Trophy } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,7 +19,13 @@ export function IndexPage() {
 	const [newContent, setNewContent] = React.useState('');
 	const [newCategoryId, setNewCategoryId] = React.useState<string>('1');
 
-	// 获取分类与帖子
+	// 积分与签到状态
+	const [points, setPoints] = React.useState<number>(8888);
+	const [userTitle, setUserTitle] = React.useState<string>('👑 创始站长');
+	const [checkedIn, setCheckedIn] = React.useState<boolean>(false);
+	const [uploading, setUploading] = React.useState<boolean>(false);
+	const fileInputRef = React.useRef<HTMLInputElement>(null);
+
 	React.useEffect(() => {
 		async function init() {
 			try {
@@ -39,6 +45,51 @@ export function IndexPage() {
 		} catch (_) {
 		} finally {
 			setLoading(false);
+		}
+	}
+
+	// 每日签到逻辑
+	function handleCheckin() {
+		if (checkedIn) return;
+		const reward = Math.floor(Math.random() * 30) + 20; // 随机奖励 20-50 积分
+		setPoints(prev => prev + reward);
+		setCheckedIn(true);
+		alert(`🎉 签到成功！获得 ${reward} 论坛积分！`);
+	}
+
+	// 换称号逻辑
+	function handleSwitchTitle() {
+		const titles = ['👑 创始站长', '🐉 传说之龙', '⭐ 论坛之星', '🌏 正式成员', '🌱 初来乍到'];
+		const next = prompt('请选择或输入你想佩戴的称号：\n' + titles.join('、'), userTitle);
+		if (next) setUserTitle(next.trim());
+	}
+
+	// 图片上传处理 (R2)
+	async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+		const file = e.target.files?.[0];
+		if (!file) return;
+		setUploading(true);
+		try {
+			const formData = new FormData();
+			formData.append('file', file);
+			const res = await fetch('https://cforum.day86530.workers.dev/api/upload', {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${token}`
+				},
+				body: formData
+			});
+			const data = await res.json() as any;
+			if (data.url) {
+				setNewContent(prev => prev + `\n\n![图片](${data.url})\n`);
+				alert('图片上传成功！已自动插入到正文中');
+			} else {
+				alert('上传失败：' + (data.error || '未知错误'));
+			}
+		} catch (err: any) {
+			alert('上传异常：' + err.message);
+		} finally {
+			setUploading(false);
 		}
 	}
 
@@ -63,7 +114,6 @@ export function IndexPage() {
 		}
 	}
 
-	// 经典导航胶囊
 	const navPills = [
 		{ id: 'all', name: '全部主题' },
 		{ id: '1', name: '茶水间' },
@@ -83,7 +133,7 @@ export function IndexPage() {
 
 	return (
 		<PageShell>
-			{/* 第二级胶囊分类栏（仿 lao1 核心样式） */}
+			{/* 第二级胶囊分类栏 */}
 			<div className="flex flex-wrap items-center gap-2 mb-4">
 				{navPills.map(pill => (
 					<button
@@ -102,9 +152,9 @@ export function IndexPage() {
 
 			{/* 左右双栏结构 */}
 			<div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-				{/* 左侧帖子主体列表（占 9 格） */}
+				{/* 左侧帖子主体列表 */}
 				<div className="lg:col-span-9 space-y-3">
-					{/* 筛选小标签栏 */}
+					{/* 筛选标签栏 */}
 					<div className="flex items-center justify-between border-b border-[#30363d] pb-2">
 						<div className="flex items-center gap-4 text-xs font-semibold">
 							<button
@@ -130,7 +180,7 @@ export function IndexPage() {
 						)}
 					</div>
 
-					{/* 展开的极简发帖面板 */}
+					{/* 展开的发帖编辑器（含图片上传） */}
 					{showEditor && (
 						<form onSubmit={handleCreatePost} className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 space-y-3">
 							<div className="flex gap-2">
@@ -150,16 +200,44 @@ export function IndexPage() {
 									className="bg-[#0d1117] border-[#30363d] text-white text-sm"
 								/>
 							</div>
-							<textarea
-								rows={4}
-								placeholder="正文内容（支持 Markdown 语法）..."
-								value={newContent}
-								onChange={e => setNewContent(e.target.value)}
-								className="w-full bg-[#0d1117] border border-[#30363d] text-white text-sm rounded-md p-2.5 outline-none focus:border-blue-500"
-							/>
-							<div className="flex justify-end gap-2">
-								<Button type="button" variant="ghost" size="sm" onClick={() => setShowEditor(false)} className="text-xs text-gray-400">取消</Button>
-								<Button type="submit" size="sm" className="bg-blue-600 hover:bg-blue-700 text-xs">立即发布</Button>
+
+							<div className="relative">
+								<textarea
+									rows={5}
+									placeholder="正文内容（支持 Markdown 语法，可以点击下方按钮上传图片）..."
+									value={newContent}
+									onChange={e => setNewContent(e.target.value)}
+									className="w-full bg-[#0d1117] border border-[#30363d] text-white text-sm rounded-md p-2.5 outline-none focus:border-blue-500"
+								/>
+							</div>
+
+							<div className="flex items-center justify-between pt-1">
+								{/* 上传图片工具栏 */}
+								<div>
+									<input
+										type="file"
+										ref={fileInputRef}
+										onChange={handleImageUpload}
+										accept="image/*"
+										className="hidden"
+									/>
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										onClick={() => fileInputRef.current?.click()}
+										disabled={uploading}
+										className="border-[#30363d] text-gray-300 hover:text-white text-xs h-7"
+									>
+										<ImageIcon className="w-3.5 h-3.5 mr-1" />
+										{uploading ? '上传中...' : '插入图片'}
+									</Button>
+								</div>
+
+								<div className="flex gap-2">
+									<Button type="button" variant="ghost" size="sm" onClick={() => setShowEditor(false)} className="text-xs text-gray-400">取消</Button>
+									<Button type="submit" size="sm" className="bg-blue-600 hover:bg-blue-700 text-xs">立即发布</Button>
+								</div>
 							</div>
 						</form>
 					)}
@@ -176,7 +254,6 @@ export function IndexPage() {
 						) : (
 							filteredPosts.map(post => (
 								<div key={post.id} className="p-3.5 hover:bg-[#1c2128] transition-colors flex items-start gap-3 group">
-									{/* 头像 */}
 									<div className="w-10 h-10 rounded-md bg-[#21262d] flex-shrink-0 flex items-center justify-center font-bold text-gray-300 overflow-hidden border border-[#30363d]">
 										{post.author_avatar ? (
 											<img src={post.author_avatar} alt="" className="w-full h-full object-cover" />
@@ -185,10 +262,8 @@ export function IndexPage() {
 										)}
 									</div>
 
-									{/* 标题与元数据 */}
 									<div className="flex-1 min-w-0">
 										<div className="flex items-center gap-1.5 flex-wrap">
-											{/* 置顶标 */}
 											{post.is_pinned === 1 && (
 												<span className="bg-[#b35900] text-white text-[11px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
 													置顶
@@ -207,7 +282,11 @@ export function IndexPage() {
 											)}
 										</div>
 
-										<div className="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
+										<div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400">
+											{/* 佩戴称号标签 */}
+											<span className="text-[11px] font-medium px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+												{userTitle}
+											</span>
 											<span className="font-medium text-gray-300">{post.author_name || '会员'}</span>
 											<span>•</span>
 											<span>{formatDate(post.created_at)}</span>
@@ -222,7 +301,6 @@ export function IndexPage() {
 										</div>
 									</div>
 
-									{/* 回复气泡数 */}
 									<div className="flex items-center gap-1 text-gray-400 group-hover:text-blue-400 bg-[#21262d] px-2 py-1 rounded-full text-xs font-semibold">
 										<MessageSquare className="w-3.5 h-3.5" />
 										<span>{post.comment_count || 0}</span>
@@ -233,9 +311,9 @@ export function IndexPage() {
 					</div>
 				</div>
 
-				{/* 右侧侧边栏（占 3 格，仿 lao1 用户面板） */}
+				{/* 右侧侧边栏 */}
 				<div className="lg:col-span-3 space-y-4">
-					{/* 用户卡片 */}
+					{/* 用户卡片（带积分与称号） */}
 					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 shadow-sm text-sm">
 						{user ? (
 							<div className="space-y-3">
@@ -243,13 +321,47 @@ export function IndexPage() {
 									<div className="w-12 h-12 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center font-bold text-blue-400">
 										{user.username.slice(0, 1).toUpperCase()}
 									</div>
-									<div>
-										<h4 className="font-bold text-white text-base leading-tight">{user.username}</h4>
-										<p className="text-xs text-gray-400 mt-0.5">Lv1 • 自由论坛成员</p>
+									<div className="flex-1 min-w-0">
+										<div className="flex items-center gap-1.5">
+											<h4 className="font-bold text-white text-base leading-tight truncate">{user.username}</h4>
+										</div>
+										{/* 当前称号与点击更换 */}
+										<button
+											onClick={handleSwitchTitle}
+											title="点击切换装备的称号"
+											className="mt-1 text-[11px] px-1.5 py-0.5 rounded bg-blue-950/60 text-blue-300 border border-blue-800/60 hover:bg-blue-900/60 flex items-center gap-1 transition-colors"
+										>
+											<Trophy className="w-3 h-3 text-yellow-500" />
+											{userTitle}
+										</button>
 									</div>
 								</div>
 
-								<div className="grid grid-cols-2 gap-2 text-xs text-gray-300 pt-2 border-t border-[#21262d]">
+								{/* 积分面板与签到按钮 */}
+								<div className="bg-[#0d1117] p-2.5 rounded-md border border-[#21262d] flex items-center justify-between">
+									<div>
+										<span className="text-[11px] text-gray-400 block">论坛积分</span>
+										<span className="text-base font-bold text-yellow-400 flex items-center gap-1">
+											<Sparkles className="w-3.5 h-3.5" />
+											{points}
+										</span>
+									</div>
+									<Button
+										size="sm"
+										onClick={handleCheckin}
+										disabled={checkedIn}
+										className={`text-xs h-7 px-3 font-semibold ${
+											checkedIn
+												? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+												: 'bg-emerald-600 hover:bg-emerald-700 text-white'
+										}`}
+									>
+										<CalendarCheck className="w-3.5 h-3.5 mr-1" />
+										{checkedIn ? '今日已签' : '每日签到'}
+									</Button>
+								</div>
+
+								<div className="grid grid-cols-2 gap-2 text-xs text-gray-300 pt-1">
 									<a href="/settings" className="hover:text-blue-400">目 我的主题</a>
 									<a href="/settings" className="hover:text-blue-400">💬 我的回帖</a>
 									<a href="/settings" className="hover:text-blue-400">☆ 我的收藏</a>
@@ -279,20 +391,19 @@ export function IndexPage() {
 						)}
 					</div>
 
-					{/* 快捷功能清单 */}
+					{/* 快捷功能 */}
 					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3.5 shadow-sm text-xs space-y-2">
 						<span className="font-bold text-gray-300 block mb-2">快捷功能</span>
 						<div className="grid grid-cols-2 gap-y-2 text-gray-400">
+							<span onClick={handleCheckin} className="hover:text-emerald-400 cursor-pointer text-emerald-500 font-medium">• 每日签到（领积分）</span>
+							<span onClick={handleSwitchTitle} className="hover:text-blue-400 cursor-pointer">• 我的称号仓库</span>
 							<span className="hover:text-white cursor-pointer">• 社区热榜</span>
-							<span className="hover:text-white cursor-pointer">• 每日签到</span>
 							<span className="hover:text-white cursor-pointer">• 用户榜单</span>
 							<span className="hover:text-white cursor-pointer">• 站点地图</span>
-							<span className="hover:text-white cursor-pointer">• 今日热点</span>
 							<span className="hover:text-white cursor-pointer">• 精华列表</span>
 						</div>
 					</div>
 
-					{/* 底部版权信息 */}
 					<div className="text-[11px] text-gray-500 px-1 leading-relaxed">
 						<p>© 2026 自由论坛 · 轻量极客生活社区</p>
 						<p className="mt-1">Powered by Cloudflare Pages & D1 Edge</p>
