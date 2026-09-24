@@ -146,7 +146,7 @@ export default {
 			}
 		}
 
-		// POST /api/user/avatar (核心新增：用户自定义更新头像与称号接口！)
+		// POST /api/user/avatar
 		if (url.pathname === '/api/user/avatar' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -160,6 +160,28 @@ export default {
 				}
 
 				return jsonResponse({ success: true, avatar_url: body.avatar_url, title: body.title });
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// DELETE /api/user/self (来去自由：用户自主彻底注销账号并物理抹除全部痕迹！)
+		if (url.pathname === '/api/user/self' && method === 'DELETE') {
+			try {
+				const userPayload = await authenticate(request);
+				if (userPayload.role === 'admin' || userPayload.id === 1) {
+					return jsonResponse({ error: '站长创始管理账号受系统保护，不可注销！' }, 400);
+				}
+
+				const uid = userPayload.id;
+				await env.cforum_db.prepare('DELETE FROM likes WHERE user_id = ?').bind(uid).run().catch(() => {});
+				await env.cforum_db.prepare('DELETE FROM comments WHERE author_id = ?').bind(uid).run().catch(() => {});
+				await env.cforum_db.prepare('DELETE FROM posts WHERE author_id = ?').bind(uid).run().catch(() => {});
+				await env.cforum_db.prepare('DELETE FROM checkins WHERE user_id = ?').bind(uid).run().catch(() => {});
+				await env.cforum_db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(uid).run().catch(() => {});
+				await env.cforum_db.prepare('DELETE FROM users WHERE id = ?').bind(uid).run();
+
+				return jsonResponse({ success: true, message: '账号及所有痕迹已彻底抹除' });
 			} catch (e) {
 				return handleError(e);
 			}
