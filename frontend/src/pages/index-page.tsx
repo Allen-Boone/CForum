@@ -19,10 +19,10 @@ export function IndexPage() {
 	const [newContent, setNewContent] = React.useState('');
 	const [newCategoryId, setNewCategoryId] = React.useState<string>('1');
 
-	// 积分与签到状态
-	const [points, setPoints] = React.useState<number>(8888);
-	const [userTitle, setUserTitle] = React.useState<string>('👑 创始站长');
-	const [checkedIn, setCheckedIn] = React.useState<boolean>(false);
+	// 初始积分默认 0 分（新用户也是 0 分）
+	const [points, setPoints] = React.useState<number>(() => (user as any)?.points ?? 0);
+	const [userTitle, setUserTitle] = React.useState<string>(() => (user as any)?.title || '👑 创始站长');
+	const [checkedIn, setCheckedIn] = React.useState<boolean>(() => Boolean((user as any)?.checked_in_today));
 	const [uploading, setUploading] = React.useState<boolean>(false);
 	const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -48,13 +48,22 @@ export function IndexPage() {
 		}
 	}
 
-	// 每日签到逻辑
-	function handleCheckin() {
+	// 每日签到逻辑：向后端请求，最多 10 分左右（2~10 分），入库保存！
+	async function handleCheckin() {
 		if (checkedIn) return;
-		const reward = Math.floor(Math.random() * 30) + 20; // 随机奖励 20-50 积分
-		setPoints(prev => prev + reward);
-		setCheckedIn(true);
-		alert(`🎉 签到成功！获得 ${reward} 论坛积分！`);
+		try {
+			const res = await apiFetch<{ success: boolean; reward: number; points: number }>('/checkin', {
+				method: 'POST'
+			});
+			if (res.success) {
+				setPoints(res.points);
+				setCheckedIn(true);
+				alert(`🎉 签到成功！随机获得 +${res.reward} 论坛积分！`);
+			}
+		} catch (err: any) {
+			alert(err.message || '今日已签到过啦！');
+			setCheckedIn(true);
+		}
 	}
 
 	// 换称号逻辑
@@ -180,7 +189,7 @@ export function IndexPage() {
 						)}
 					</div>
 
-					{/* 展开的发帖编辑器（含图片上传） */}
+					{/* 发帖编辑器 */}
 					{showEditor && (
 						<form onSubmit={handleCreatePost} className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 space-y-3">
 							<div className="flex gap-2">
@@ -212,7 +221,6 @@ export function IndexPage() {
 							</div>
 
 							<div className="flex items-center justify-between pt-1">
-								{/* 上传图片工具栏 */}
 								<div>
 									<input
 										type="file"
@@ -283,7 +291,6 @@ export function IndexPage() {
 										</div>
 
 										<div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400">
-											{/* 佩戴称号标签 */}
 											<span className="text-[11px] font-medium px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
 												{userTitle}
 											</span>
@@ -313,7 +320,6 @@ export function IndexPage() {
 
 				{/* 右侧侧边栏 */}
 				<div className="lg:col-span-3 space-y-4">
-					{/* 用户卡片（带积分与称号） */}
 					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 shadow-sm text-sm">
 						{user ? (
 							<div className="space-y-3">
@@ -325,7 +331,6 @@ export function IndexPage() {
 										<div className="flex items-center gap-1.5">
 											<h4 className="font-bold text-white text-base leading-tight truncate">{user.username}</h4>
 										</div>
-										{/* 当前称号与点击更换 */}
 										<button
 											onClick={handleSwitchTitle}
 											title="点击切换装备的称号"
@@ -337,7 +342,7 @@ export function IndexPage() {
 									</div>
 								</div>
 
-								{/* 积分面板与签到按钮 */}
+								{/* 积分与每日签到 */}
 								<div className="bg-[#0d1117] p-2.5 rounded-md border border-[#21262d] flex items-center justify-between">
 									<div>
 										<span className="text-[11px] text-gray-400 block">论坛积分</span>
@@ -391,7 +396,6 @@ export function IndexPage() {
 						)}
 					</div>
 
-					{/* 快捷功能 */}
 					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3.5 shadow-sm text-xs space-y-2">
 						<span className="font-bold text-gray-300 block mb-2">快捷功能</span>
 						<div className="grid grid-cols-2 gap-y-2 text-gray-400">
