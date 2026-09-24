@@ -4,7 +4,7 @@ export type ForumConfig = {
 	turnstile_enabled: boolean;
 	turnstile_site_key: string;
 	user_count?: number;
-	jwt_secret_configured?: boolean; // indicates whether JWT_SECRET is set in backend
+	jwt_secret_configured?: boolean;
 };
 
 export type Category = {
@@ -26,6 +26,7 @@ export type Post = {
 	author_name?: string;
 	author_avatar?: string | null;
 	author_role?: 'admin' | 'user';
+	author_title?: string | null;
 	like_count?: number;
 	comment_count?: number;
 	liked?: boolean;
@@ -57,8 +58,20 @@ export function getSecurityHeaders(method: string, contentType: string | null = 
 	return headers;
 }
 
+// 核心升级：全站任何请求自动携带登录 Token，绝不再漏传导致过期！
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-	const res = await fetch(`${API_BASE}${path}`, init);
+	const method = init?.method || 'GET';
+	const autoHeaders = getSecurityHeaders(method);
+	const mergedHeaders = {
+		...autoHeaders,
+		...(init?.headers as Record<string, string> || {})
+	};
+
+	const res = await fetch(`${API_BASE}${path}`, {
+		...init,
+		headers: mergedHeaders
+	});
+
 	if (res.status === 401) {
 		logout();
 		throw new Error('登录已过期，请重新登录');
