@@ -50,11 +50,11 @@ function CuteCircleAvatar({ name, avatarUrl, index }: { name: string; avatarUrl?
 	);
 }
 
-// 昼夜自适应色彩 + 紧凑式温情时钟组件
+// 昼夜自适应色彩 + 重点词独立高亮温情时钟
 function TimeGreetingBanner() {
 	const [timeText, setTimeText] = React.useState('');
 	const [isNight, setIsNight] = React.useState(false);
-	const [greeting, setGreeting] = React.useState({ icon: '✨', text: '', tag: '问候' });
+	const [hour, setHour] = React.useState(18);
 
 	React.useEffect(() => {
 		function update() {
@@ -68,49 +68,9 @@ function TimeGreetingBanner() {
 			const weekDays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
 			const weekDay = weekDays[now.getDay()];
 
+			setHour(hours);
 			setTimeText(`${year}年${month}月${day}日 ${weekDay} ${String(hours).padStart(2, '0')}:${minutes}:${seconds}`);
-
-			// 判定是否夜晚（19:00 - 05:59 为夜间模式）
-			const nightTime = hours >= 19 || hours < 6;
-			setIsNight(nightTime);
-
-			if (hours >= 0 && hours < 6) {
-				setGreeting({
-					icon: '🌙',
-					tag: '夜深了',
-					text: '夜深了，极客们也要早点休息，熬夜最伤身，代码和搞钱的事留给明天吧！'
-				});
-			} else if (hours >= 6 && hours < 9) {
-				setGreeting({
-					icon: '🌅',
-					tag: '早安',
-					text: '清晨好！新的一天充满无限可能，来自由论坛开启元气满满的搞钱日常吧！'
-				});
-			} else if (hours >= 9 && hours < 12) {
-				setGreeting({
-					icon: '☀️',
-					tag: '上午好',
-					text: '上午好！忙碌折腾之余，记得喝口温水、伸个懒腰，生活不止代码与屏幕。'
-				});
-			} else if (hours >= 12 && hours < 14) {
-				setGreeting({
-					icon: '🍱',
-					tag: '干饭啦',
-					text: '干饭时间到！吃饱睡个小午觉，养足精神，下午思路才会更敏捷。'
-				});
-			} else if (hours >= 14 && hours < 19) {
-				setGreeting({
-					icon: '☕',
-					tag: '下午茶',
-					text: '下午好！来杯咖啡提提神，去【茶水间】摸摸鱼吹吹水，劳逸结合效率更高！'
-				});
-			} else {
-				setGreeting({
-					icon: '🌆',
-					tag: '晚上好',
-					text: '晚上好！卸下一天的疲惫，自由论坛是属于你的纯粹自留地，享受交流吧。'
-				});
-			}
+			setIsNight(hours >= 19 || hours < 6);
 		}
 
 		update();
@@ -118,40 +78,89 @@ function TimeGreetingBanner() {
 		return () => clearInterval(timer);
 	}, []);
 
+	// 重点词精准高亮渲染
+	function renderGreetingContent() {
+		if (hour >= 0 && hour < 6) {
+			return (
+				<span className="leading-tight text-gray-200">
+					夜深了，极客们也要 <strong className="text-purple-300 font-bold">早点休息 🌙</strong>，熬夜最伤身，<strong className="text-pink-400 font-bold">代码与搞钱</strong> 的事留给明天吧！
+				</span>
+			);
+		} else if (hour >= 6 && hour < 9) {
+			return (
+				<span className="leading-tight text-gray-200">
+					清晨好！新的一天充满无限可能，来自由论坛开启 <strong className="text-emerald-400 font-bold">元气满满 🌅</strong> 的 <strong className="text-amber-400 font-bold">搞钱日常</strong> 吧！
+				</span>
+			);
+		} else if (hour >= 9 && hour < 12) {
+			return (
+				<span className="leading-tight text-gray-200">
+					上午好！忙碌折腾之余，记得 <strong className="text-cyan-300 font-bold">喝口温水 🥛</strong>、伸个懒腰，生活不止代码与屏幕。
+				</span>
+			);
+		} else if (hour >= 12 && hour < 14) {
+			return (
+				<span className="leading-tight text-gray-200">
+					干饭时间到！<strong className="text-orange-400 font-bold">🍱 吃饱睡个小午觉</strong>，养足精神，下午思路才会更敏捷。
+				</span>
+			);
+		} else if (hour >= 14 && hour < 19) {
+			return (
+				<span className="leading-tight text-gray-200">
+					下午好！来杯 <strong className="text-amber-400 font-bold">☕ 咖啡</strong> 提提神，去 <strong className="text-yellow-400 font-bold underline decoration-yellow-500/60 underline-offset-2">【茶水间】</strong> 摸鱼吹水，劳逸结合效率更高！
+				</span>
+			);
+		} else {
+			return (
+				<span className="leading-tight text-gray-200">
+					晚上好！卸下一天的疲惫，自由论坛是属于你的 <strong className="text-sky-400 font-bold">数字避风港 ⛵</strong>，静心交流吧。
+				</span>
+			);
+		}
+	}
+
+	function getTagInfo() {
+		if (hour >= 0 && hour < 6) return { icon: '🌙', tag: '夜深了' };
+		if (hour >= 6 && hour < 9) return { icon: '🌅', tag: '早安' };
+		if (hour >= 9 && hour < 12) return { icon: '☀️', tag: '上午好' };
+		if (hour >= 12 && hour < 14) return { icon: '🍱', tag: '干饭啦' };
+		if (hour >= 14 && hour < 19) return { icon: '☕', tag: '下午茶' };
+		return { icon: '🌆', tag: '晚上好' };
+	}
+
+	const tag = getTagInfo();
+
 	return (
 		<div
 			className={`mb-4 rounded-lg px-3.5 py-2.5 shadow-md transition-all flex flex-wrap items-center gap-3 text-xs ${
 				isNight
-					? 'bg-[#131722] border border-purple-500/30'
-					: 'bg-[#161b22] border border-sky-500/30'
+					? 'bg-[#121622] border border-purple-500/40 shadow-purple-950/20'
+					: 'bg-[#161b22] border border-sky-500/40 shadow-sky-950/20'
 			}`}
 		>
-			{/* 紧凑左侧：时钟图标 + 醒目时间（白天电光蓝，夜晚极光紫） */}
+			{/* 时间部分：白天电光蓝、夜晚赛博极光紫 */}
 			<div className="flex items-center gap-1.5 flex-shrink-0">
-				<Clock className={`w-3.5 h-3.5 ${isNight ? 'text-purple-400' : 'text-sky-400'}`} />
-				<span className={`font-mono font-bold tracking-wide ${isNight ? 'text-[#c084fc]' : 'text-[#38bdf8]'}`}>
+				<Clock className={`w-3.5 h-3.5 ${isNight ? 'text-purple-400 animate-pulse' : 'text-sky-400'}`} />
+				<span className={`font-mono font-bold tracking-wide text-[13px] ${isNight ? 'text-[#c084fc]' : 'text-[#38bdf8]'}`}>
 					{timeText}
 				</span>
 			</div>
 
-			{/* 中间小巧的分隔竖线 */}
 			<span className="hidden sm:inline-block text-gray-600 select-none">|</span>
 
-			{/* 紧凑右侧：昼夜专属标签 + 动态问候语 */}
+			{/* 问候语部分：带不同颜色的重点词渲染 */}
 			<div className="flex items-center gap-2 flex-wrap">
 				<span
 					className={`inline-flex items-center gap-1 rounded px-2 py-0.5 font-bold text-[11px] shadow-sm select-none ${
 						isNight
-							? 'bg-purple-500/20 text-[#e9d5ff] border border-purple-500/40'
-							: 'bg-amber-500/20 text-[#fde047] border border-amber-500/40'
+							? 'bg-purple-500/20 text-[#e9d5ff] border border-purple-500/50'
+							: 'bg-amber-500/20 text-[#fde047] border border-amber-500/50'
 					}`}
 				>
-					<span>{greeting.icon}</span>
-					<span>{greeting.tag}</span>
+					<span>{tag.icon}</span>
+					<span>{tag.tag}</span>
 				</span>
-				<span className={`leading-tight font-medium ${isNight ? 'text-[#f1f5f9]' : 'text-[#f8fafc]'}`}>
-					{greeting.text}
-				</span>
+				{renderGreetingContent()}
 			</div>
 		</div>
 	);
@@ -383,24 +392,13 @@ export function IndexPage() {
 		return DEFAULT_CATEGORIES.find(c => c.id === Number(catId))?.name || '茶水间';
 	}
 
-	const fallbackUsers = [
-		{ id: 101, username: 'Alex_M', avatar_url: null },
-		{ id: 102, username: 'Sally', avatar_url: null },
-		{ id: 103, username: 'strings', avatar_url: null },
-		{ id: 104, username: '幸运365', avatar_url: null },
-		{ id: 105, username: 'spr1ng', avatar_url: null },
-		{ id: 106, username: 'Nathan', avatar_url: null },
-		{ id: 107, username: 'baijiu', avatar_url: null },
-		{ id: 108, username: '极客老王', avatar_url: null }
-	];
-
-	const displayLatestUsers = [...commStats.latest_users, ...fallbackUsers].slice(0, 8);
-	const displayOnlineUsers = [...commStats.latest_users, ...fallbackUsers.slice().reverse()].slice(0, 8);
+	const allRealUsers = commStats.latest_users || [];
+	const displayLatestUsers = allRealUsers.slice(0, 8);
+	const displayOnlineUsers = allRealUsers.slice(0, Math.min(8, allRealUsers.length));
 	const onlineCount = Math.min(commStats.users || 1, Math.max(1, Math.floor((commStats.users || 1) * 0.4) + 1));
 
 	return (
 		<PageShell>
-			{/* 分类胶囊标签栏 */}
 			<div className="flex flex-wrap items-center gap-2 mb-3">
 				{navPills.map(pill => (
 					<button
@@ -415,7 +413,7 @@ export function IndexPage() {
 				))}
 			</div>
 
-			{/* 全新紧凑排版 + 昼夜自适应色彩问候条 */}
+			{/* 重点词独立高亮温情横幅 */}
 			<TimeGreetingBanner />
 
 			<div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
