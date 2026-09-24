@@ -22,6 +22,7 @@ interface DBUser {
     email_change_token?: string;
     points?: number;
     title?: string;
+    last_checkin_date?: string;
 }
 
 interface PostAuthorInfo {
@@ -188,7 +189,7 @@ export default {
 			return restrictedKeywords.some(keyword => lowerUsername.includes(keyword));
 		};
 
-		// POST /api/register (免邮箱验证直接激活！)
+		// POST /api/register (初始积分严格设为 0 分，免邮箱验证)
 		if (url.pathname === '/api/register' && method === 'POST') {
 			try {
 				const body = await request.json() as any;
@@ -220,9 +221,9 @@ export default {
 				const passwordHash = await hashPassword(password);
 				const verificationToken = generateToken();
 
-				// 直接插入数据库，默认激活 (verified = 1)，赠送 100 积分与新手称号
+				// 初始积分设为 0 分！
 				const { success, meta } = await env.cforum_db.prepare(
-					'INSERT INTO users (email, username, password, role, verified, verification_token, points, title) VALUES (?, ?, ?, ?, 1, ?, 100, ?)'
+					'INSERT INTO users (email, username, password, role, verified, verification_token, points, title) VALUES (?, ?, ?, ?, 1, ?, 0, ?)'
 				).bind(email, username, passwordHash, 'user', verificationToken, '🌱 初来乍到').run();
 
 				if (!success) {
@@ -254,7 +255,7 @@ export default {
 				}
 
 				const user = await env.cforum_db.prepare(
-					'SELECT id, username, email, password, verified, role, avatar_url, totp_secret, totp_enabled, points, title FROM users WHERE email = ?'
+					'SELECT id, username, email, password, verified, role, avatar_url, totp_secret, totp_enabled, points, title, last_checkin_date FROM users WHERE email = ?'
 				).bind(email).first<DBUser>();
 
 				if (!user) {
@@ -296,6 +297,8 @@ export default {
 					role: user.role || 'user'
 				});
 
+				const today = new Date().toISOString().slice(0, 10);
+
 				return jsonResponse({
 					token,
 					user: {
@@ -304,9 +307,43 @@ export default {
 						email: user.email,
 						role: user.role || 'user',
 						avatar_url: user.avatar_url,
-						points: user.points || 100,
-						title: user.title || '🌱 初来乍到'
+						points: user.points ?? 0,
+						title: user.title || '🌱 初来乍到',
+						checked_in_today: user.last_checkin_date === today
 					}
+				});
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// POST /api/checkin (每日签到：随机奖励 2~10 积分，真实存入数据库)
+		if (url.pathname === '/api/checkin' && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				const today = new Date().toISOString().slice(0, 10);
+
+				const user = await env.cforum_db.prepare(
+					'SELECT points, last_checkin_date FROM users WHERE id = ?'
+				).bind(userPayload.id).first<DBUser>();
+
+				if (user?.last_checkin_date === today) {
+					return jsonResponse({ error: '今日已经签过到了，明天再来吧！' }, 400);
+				}
+
+				// 随机产生 2 到 10 点小额积分
+				const reward = Math.floor(Math.random() * 9) + 2; 
+
+				await env.cforum_db.prepare(
+					'UPDATE users SET points = COALESCE(points, 0) + ?, last_checkin_date = ? WHERE id = ?'
+				).bind(reward, today, userPayload.id).run();
+
+				const newPoints = (user?.points ?? 0) + reward;
+
+				return jsonResponse({
+					success: true,
+					reward,
+					points: newPoints
 				});
 			} catch (e) {
 				return handleError(e);
