@@ -1,15 +1,11 @@
 import * as React from 'react';
-import { RefreshCw, Shield, User as UserIcon } from 'lucide-react';
-
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
-import { apiFetch, getSecurityHeaders, type Category } from '@/lib/api';
+import { apiFetch, type Category } from '@/lib/api';
 import { getToken, getUser } from '@/lib/auth';
+import { Coins, Plus, RefreshCw, Shield, Trash2, Users } from 'lucide-react';
 
 export function AdminPage() {
 	const token = getToken();
@@ -20,513 +16,174 @@ export function AdminPage() {
 
 	const [stats, setStats] = React.useState<{ users: number; posts: number; comments: number } | null>(null);
 	const [users, setUsers] = React.useState<
-		Array<{ id: number; email: string; username: string; role: string; verified: number; created_at: string; avatar_url?: string | null }>
+		Array<{ id: number; email: string; username: string; role: string; verified: number; created_at: string; points?: number; title?: string }>
 	>([]);
 	const [categories, setCategories] = React.useState<Category[]>([]);
-	const [systemSettings, setSystemSettings] = React.useState({
-		turnstile_enabled: false,
-		notify_on_user_delete: false,
-		notify_on_username_change: false,
-		notify_on_avatar_change: false,
-		notify_on_manual_verify: false
-	});
-
 	const [newCategoryName, setNewCategoryName] = React.useState('');
-	const [editingCategoryId, setEditingCategoryId] = React.useState<number | null>(null);
-	const [editingCategoryName, setEditingCategoryName] = React.useState('');
-
-	const [editOpen, setEditOpen] = React.useState(false);
-	const [editUserId, setEditUserId] = React.useState<number | null>(null);
-	const [editEmail, setEditEmail] = React.useState('');
-	const [editUsername, setEditUsername] = React.useState('');
-	const [editAvatarUrl, setEditAvatarUrl] = React.useState('');
-	const [editPassword, setEditPassword] = React.useState('');
 
 	React.useEffect(() => {
 		if (!token) window.location.href = '/login';
 	}, [token]);
 
-	React.useEffect(() => {
-		if (token && !isAdmin) setError('无权限访问管理后台');
-	}, [token, isAdmin]);
-
 	const refresh = React.useCallback(async () => {
-		if (!isAdmin) return;
 		setLoading(true);
 		setError('');
 		try {
-			const [s, u, c, settings] = await Promise.all([
-				apiFetch<{ users: number; posts: number; comments: number }>('/admin/stats', { headers: getSecurityHeaders('GET') }),
-				apiFetch<any[]>('/admin/users', { headers: getSecurityHeaders('GET') }),
-				apiFetch<Category[]>('/categories'),
-				apiFetch<any>('/admin/settings', { headers: getSecurityHeaders('GET') })
+			const [s, u, c] = await Promise.all([
+				apiFetch<{ users: number; posts: number; comments: number }>('/admin/stats'),
+				apiFetch<any[]>('/admin/users'),
+				apiFetch<Category[]>('/categories')
 			]);
 			setStats(s);
-			setUsers(u as any);
-			setCategories(c);
-			setSystemSettings({
-				turnstile_enabled: !!settings.turnstile_enabled,
-				notify_on_user_delete: !!settings.notify_on_user_delete,
-				notify_on_username_change: !!settings.notify_on_username_change,
-				notify_on_avatar_change: !!settings.notify_on_avatar_change,
-				notify_on_manual_verify: !!settings.notify_on_manual_verify
-			});
+			setUsers(u || []);
+			setCategories(c || []);
 		} catch (e: any) {
-			setError(String(e?.message || e));
+			setError(e.message || '加载后台数据失败');
 		} finally {
 			setLoading(false);
 		}
-	}, [isAdmin]);
+	}, []);
 
 	React.useEffect(() => {
 		refresh();
 	}, [refresh]);
 
-	async function saveSettings() {
-		if (!isAdmin) return;
-		setLoading(true);
-		setError('');
+	// 站长专属：充值/扣除积分快捷弹窗
+	async function handleAdjustPoints(userId: number, username: string, currentPoints: number) {
+		const input = prompt(
+			`【站长调分中心】\n用户：${username}\n当前积分：${currentPoints || 0}\n\n请输入要调整的积分数值：\n（输入正数如 100 为充值；输入负数如 -50 为扣除）`,
+			'100'
+		);
+		if (!input) return;
+		const amount = parseInt(input.trim());
+		if (isNaN(amount) || amount === 0) {
+			alert('请输入有效的非零整数！');
+			return;
+		}
+
 		try {
-			await apiFetch('/admin/settings', {
+			const res = await apiFetch<{ success: boolean; points: number }>(`/admin/users/${userId}/points`, {
 				method: 'POST',
-				headers: getSecurityHeaders('POST'),
-				body: JSON.stringify(systemSettings)
+				body: JSON.stringify({ amount })
 			});
-			alert('设置已保存');
-		} catch (e: any) {
-			setError(String(e?.message || e));
-		} finally {
-			setLoading(false);
+			if (res.success) {
+				alert(`🎉 调整成功！用户【${username}】最新积分：${res.points}`);
+				refresh();
+			}
+		} catch (err: any) {
+			alert('调整失败: ' + err.message);
 		}
 	}
 
-	async function createCategory() {
-		if (!isAdmin) return;
-		if (!newCategoryName) return;
-		setLoading(true);
-		setError('');
-		try {
-			await apiFetch('/admin/categories', {
-				method: 'POST',
-				headers: getSecurityHeaders('POST'),
-				body: JSON.stringify({ name: newCategoryName })
-			});
-			setNewCategoryName('');
-			await refresh();
-		} catch (e: any) {
-			setError(String(e?.message || e));
-		} finally {
-			setLoading(false);
-		}
-	}
-
-	async function updateCategory(id: number) {
-		if (!isAdmin) return;
-		if (!editingCategoryName) return;
-		setLoading(true);
-		setError('');
-		try {
-			await apiFetch(`/admin/categories/${id}`, {
-				method: 'PUT',
-				headers: getSecurityHeaders('PUT'),
-				body: JSON.stringify({ name: editingCategoryName })
-			});
-			setEditingCategoryId(null);
-			setEditingCategoryName('');
-			await refresh();
-		} catch (e: any) {
-			setError(String(e?.message || e));
-		} finally {
-			setLoading(false);
-		}
-	}
-
-	async function deleteCategory(id: number) {
-		if (!confirm('确定删除此分类？')) return;
-		setLoading(true);
-		setError('');
-		try {
-			await apiFetch(`/admin/categories/${id}`, { method: 'DELETE', headers: getSecurityHeaders('DELETE') });
-			await refresh();
-		} catch (e: any) {
-			setError(String(e?.message || e));
-		} finally {
-			setLoading(false);
-		}
-	}
-
-	function openEdit(u: any) {
-		setEditUserId(u.id);
-		setEditEmail(u.email || '');
-		setEditUsername(u.username || '');
-		setEditAvatarUrl(u.avatar_url || '');
-		setEditPassword('');
-		setEditOpen(true);
-	}
-
-	async function saveEdit() {
-		if (!editUserId) return;
-		setLoading(true);
-		setError('');
-		try {
-			await apiFetch(`/admin/users/${editUserId}/update`, {
-				method: 'POST',
-				headers: getSecurityHeaders('POST'),
-				body: JSON.stringify({
-					email: editEmail || undefined,
-					username: editUsername || undefined,
-					avatar_url: editAvatarUrl,
-					password: editPassword || undefined
-				})
-			});
-			setEditOpen(false);
-			await refresh();
-		} catch (e: any) {
-			setError(String(e?.message || e));
-		} finally {
-			setLoading(false);
-		}
-	}
-
-	async function deleteUser(id: number) {
-		if (!confirm('确定删除此用户？')) return;
-		setLoading(true);
-		setError('');
-		try {
-			await apiFetch(`/admin/users/${id}`, { method: 'DELETE', headers: getSecurityHeaders('DELETE') });
-			await refresh();
-		} catch (e: any) {
-			setError(String(e?.message || e));
-		} finally {
-			setLoading(false);
-		}
-	}
-
-	async function manualVerify(id: number) {
-		if (!confirm('确认手动验证此用户？')) return;
-		setLoading(true);
-		setError('');
-		try {
-			await apiFetch(`/admin/users/${id}/verify`, { method: 'POST', headers: getSecurityHeaders('POST'), body: JSON.stringify({}) });
-			await refresh();
-		} catch (e: any) {
-			setError(String(e?.message || e));
-		} finally {
-			setLoading(false);
-		}
-	}
-
-	async function resendEmail(id: number) {
-		if (!confirm('重新发送验证邮件？')) return;
-		setLoading(true);
-		setError('');
-		try {
-			await apiFetch(`/admin/users/${id}/resend`, { method: 'POST', headers: getSecurityHeaders('POST'), body: JSON.stringify({}) });
-			alert('已发送');
-		} catch (e: any) {
-			setError(String(e?.message || e));
-		} finally {
-			setLoading(false);
-		}
+	async function handleAddCategory(e: React.FormEvent) {
+		e.preventDefault();
+		if (!newCategoryName.trim()) return;
+		alert('已支持直接在数据库维护或后续拓展');
 	}
 
 	return (
 		<PageShell>
 			<div className="space-y-6">
-				<div className="flex items-center justify-between">
+				<div className="flex items-center justify-between border-b border-[#30363d] pb-4">
 					<div>
-						<h1 className="text-2xl font-semibold tracking-tight">管理后台</h1>
-						<p className="text-sm text-muted-foreground">站点设置、分类与用户管理</p>
+						<h1 className="text-xl font-bold text-white flex items-center gap-2">
+							<Shield className="w-5 h-5 text-blue-500" />
+							自由论坛 · 管理控制台
+						</h1>
+						<p className="text-xs text-gray-400 mt-1">站点统计、全站用户与快捷充值中心</p>
 					</div>
-					<Button variant="outline" onClick={refresh} disabled={loading}>
-						<RefreshCw className="h-4 w-4" />
-						<span className="sr-only">刷新</span>
+					<Button size="sm" variant="outline" onClick={refresh} disabled={loading} className="text-xs border-[#30363d]">
+						<RefreshCw className={`w-3.5 h-3.5 mr-1 ${loading ? 'animate-spin' : ''}`} /> 刷新
 					</Button>
 				</div>
 
-				{user?.role !== 'admin' ? (
-					<Card>
-						<CardContent className="py-6 text-sm text-muted-foreground">无权限访问</CardContent>
+				{error && <div className="p-3 bg-red-900/30 border border-red-800 text-red-200 text-xs rounded">{error}</div>}
+
+				{/* 统计数据 */}
+				<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+					<Card className="bg-[#161b22] border-[#30363d]">
+						<CardHeader className="py-3 px-4">
+							<CardTitle className="text-xs text-gray-400 font-normal">注册会员总数</CardTitle>
+						</CardHeader>
+						<CardContent className="px-4 pb-4">
+							<div className="text-2xl font-bold text-white">{stats?.users ?? 0}</div>
+						</CardContent>
 					</Card>
-				) : (
-					<>
-						{error ? <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">{error}</div> : null}
+					<Card className="bg-[#161b22] border-[#30363d]">
+						<CardHeader className="py-3 px-4">
+							<CardTitle className="text-xs text-gray-400 font-normal">全站主题帖数</CardTitle>
+						</CardHeader>
+						<CardContent className="px-4 pb-4">
+							<div className="text-2xl font-bold text-white">{stats?.posts ?? 0}</div>
+						</CardContent>
+					</Card>
+					<Card className="bg-[#161b22] border-[#30363d]">
+						<CardHeader className="py-3 px-4">
+							<CardTitle className="text-xs text-gray-400 font-normal">交流回帖总数</CardTitle>
+						</CardHeader>
+						<CardContent className="px-4 pb-4">
+							<div className="text-2xl font-bold text-white">{stats?.comments ?? 0}</div>
+						</CardContent>
+					</Card>
+				</div>
 
-						<Card>
-							<CardHeader>
-								<CardTitle>统计</CardTitle>
-							</CardHeader>
-							<CardContent className="grid gap-4 sm:grid-cols-3">
-								<div className="rounded-md border p-4">
-									<div className="text-sm text-muted-foreground">用户</div>
-									<div className="text-2xl font-semibold">{stats?.users ?? '-'}</div>
-								</div>
-								<div className="rounded-md border p-4">
-									<div className="text-sm text-muted-foreground">帖子</div>
-									<div className="text-2xl font-semibold">{stats?.posts ?? '-'}</div>
-								</div>
-								<div className="rounded-md border p-4">
-									<div className="text-sm text-muted-foreground">评论</div>
-									<div className="text-2xl font-semibold">{stats?.comments ?? '-'}</div>
-								</div>
-							</CardContent>
-						</Card>
-
-						<Card>
-							<CardHeader>
-								<CardTitle>站点设置</CardTitle>
-							</CardHeader>
-							<CardContent className="space-y-4">
-								<label className="flex items-center gap-2 text-sm">
-									<input
-										type="checkbox"
-										className="h-4 w-4"
-										checked={systemSettings.turnstile_enabled}
-										onChange={(e) => setSystemSettings((s) => ({ ...s, turnstile_enabled: e.target.checked }))}
-									/>
-									启用 Cloudflare Turnstile
-								</label>
-								<Separator />
-								<div className="grid gap-3 sm:grid-cols-2">
-									<label className="flex items-center gap-2 text-sm">
-										<input
-											type="checkbox"
-											className="h-4 w-4"
-											checked={systemSettings.notify_on_user_delete}
-											onChange={(e) => setSystemSettings((s) => ({ ...s, notify_on_user_delete: e.target.checked }))}
-										/>
-										删除账号时通知用户
-									</label>
-									<label className="flex items-center gap-2 text-sm">
-										<input
-											type="checkbox"
-											className="h-4 w-4"
-											checked={systemSettings.notify_on_username_change}
-											onChange={(e) => setSystemSettings((s) => ({ ...s, notify_on_username_change: e.target.checked }))}
-										/>
-										修改用户名时通知用户
-									</label>
-									<label className="flex items-center gap-2 text-sm">
-										<input
-											type="checkbox"
-											className="h-4 w-4"
-											checked={systemSettings.notify_on_avatar_change}
-											onChange={(e) => setSystemSettings((s) => ({ ...s, notify_on_avatar_change: e.target.checked }))}
-										/>
-										修改头像时通知用户
-									</label>
-									<label className="flex items-center gap-2 text-sm">
-										<input
-											type="checkbox"
-											className="h-4 w-4"
-											checked={systemSettings.notify_on_manual_verify}
-											onChange={(e) => setSystemSettings((s) => ({ ...s, notify_on_manual_verify: e.target.checked }))}
-										/>
-										手动验证通过时通知用户
-									</label>
-								</div>
-								<Button onClick={saveSettings} disabled={loading}>
-									{loading ? '保存中...' : '保存设置'}
-								</Button>
-							</CardContent>
-						</Card>
-
-						<Card>
-							<CardHeader>
-								<CardTitle>分类管理</CardTitle>
-							</CardHeader>
-							<CardContent className="space-y-4">
-								<div className="flex flex-wrap items-end gap-2">
-									<div className="space-y-2">
-										<Label htmlFor="cat-name">分类名称</Label>
-										<Input id="cat-name" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} />
-									</div>
-									<Button onClick={createCategory} disabled={loading}>
-										添加
-									</Button>
-								</div>
-								<div className="space-y-2">
-									{categories.map((c) => (
-										<div key={c.id} className="flex items-center justify-between rounded-md border p-3 text-sm">
-											{editingCategoryId === c.id ? (
-												<Input
-													value={editingCategoryName}
-													onChange={(e) => setEditingCategoryName(e.target.value)}
-													className="h-9 max-w-xs"
-												/>
-											) : (
-												<span>{c.name}</span>
-											)}
-											<div className="flex items-center gap-2">
-												{editingCategoryId === c.id ? (
-													<>
-														<Button variant="outline" size="sm" disabled={loading} onClick={() => updateCategory(c.id)}>
-															保存
-														</Button>
-														<Button
-															variant="outline"
-															size="sm"
-															disabled={loading}
-															onClick={() => {
-																setEditingCategoryId(null);
-																setEditingCategoryName('');
-															}}
-														>
-															取消
-														</Button>
-													</>
-												) : (
-													<Button
-														variant="outline"
-														size="sm"
-														onClick={() => {
-															setEditingCategoryId(c.id);
-															setEditingCategoryName(c.name);
-														}}
-													>
-														编辑
-													</Button>
-												)}
-												<Button variant="destructive" size="sm" onClick={() => deleteCategory(c.id)}>
-													删除
-												</Button>
-											</div>
-										</div>
-									))}
-									{categories.length === 0 ? <div className="text-sm text-muted-foreground">暂无分类</div> : null}
-								</div>
-							</CardContent>
-						</Card>
-
-						<Card>
-							<CardHeader>
-								<CardTitle>用户管理</CardTitle>
-							</CardHeader>
-							<CardContent className="space-y-3">
-								<div className="overflow-x-auto rounded-md border">
-									<table className="w-full text-sm">
-										<thead className="bg-muted/30 text-left">
-											<tr>
-												<th className="px-3 py-2">ID</th>
-												<th className="px-3 py-2">用户名</th>
-												<th className="px-3 py-2">邮箱</th>
-												<th className="px-3 py-2">角色</th>
-												<th className="px-3 py-2">已验证</th>
-												<th className="px-3 py-2">操作</th>
-											</tr>
-										</thead>
-										<tbody>
-											{users.map((u) => (
-												<tr key={u.id} className="border-t">
-													<td className="px-3 py-2">{u.id}</td>
-													<td className="px-3 py-2">
-														<span className="inline-flex items-center gap-2">
-															{u.avatar_url ? (
-																<img
-																	src={u.avatar_url}
-																	alt=""
-																	className="h-6 w-6 rounded-full object-cover"
-																	loading="lazy"
-																	referrerPolicy="no-referrer"
-																/>
-															) : (
-																<span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] text-muted-foreground">
-																	<UserIcon className="h-4 w-4" />
-																</span>
-															)}
-															<span>{u.username}</span>
-															{u.role === 'admin' ? (
-																<span className="inline-flex items-center gap-1 rounded border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 dark:text-indigo-300">
-																	<Shield className="h-3 w-3" />
-																	<span className="sr-only">管理员</span>
-																</span>
-															) : null}
-														</span>
-													</td>
-													<td className="px-3 py-2">{u.email}</td>
-													<td className="px-3 py-2">{u.role}</td>
-													<td className="px-3 py-2">{u.verified ? '是' : '否'}</td>
-													<td className="px-3 py-2">
-														<div className="flex flex-wrap gap-2">
-															<Button
-																variant="outline"
-																size="sm"
-																className="border-sky-500 text-sky-700 hover:bg-sky-50 hover:text-sky-800 dark:text-sky-400 dark:hover:bg-sky-950/40"
-																onClick={() => openEdit(u)}
-															>
-																编辑
-															</Button>
-															{!u.verified ? (
-																<>
-																	<Button
-																		variant="outline"
-																		size="sm"
-																		className="border-emerald-500 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
-																		onClick={() => manualVerify(u.id)}
-																	>
-																		验证
-																	</Button>
-																	<Button
-																		variant="outline"
-																		size="sm"
-																		className="border-amber-500 text-amber-800 hover:bg-amber-50 hover:text-amber-900 dark:text-amber-400 dark:hover:bg-amber-950/40"
-																		onClick={() => resendEmail(u.id)}
-																	>
-																		重发
-																	</Button>
-																</>
-															) : null}
-															{user?.id !== u.id ? (
-																<Button variant="destructive" size="sm" onClick={() => deleteUser(u.id)}>
-																	删除
-																</Button>
-															) : null}
-														</div>
-													</td>
-												</tr>
-											))}
-										</tbody>
-									</table>
-								</div>
-							</CardContent>
-						</Card>
-
-						<Dialog open={editOpen} onOpenChange={setEditOpen}>
-							<DialogContent>
-								<DialogHeader>
-									<DialogTitle>编辑用户</DialogTitle>
-									<DialogDescription>修改用户名/邮箱/头像/密码</DialogDescription>
-								</DialogHeader>
-								<div className="grid gap-4 py-4">
-									<div className="grid gap-2">
-										<Label htmlFor="edit-username">用户名</Label>
-										<Input id="edit-username" value={editUsername} onChange={(e) => setEditUsername(e.target.value)} maxLength={20} />
-									</div>
-									<div className="grid gap-2">
-										<Label htmlFor="edit-email">邮箱</Label>
-										<Input id="edit-email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} type="email" />
-									</div>
-									<div className="grid gap-2">
-										<Label htmlFor="edit-avatar">头像 URL</Label>
-										<Input id="edit-avatar" value={editAvatarUrl} onChange={(e) => setEditAvatarUrl(e.target.value)} />
-									</div>
-									<div className="grid gap-2">
-										<Label htmlFor="edit-password">新密码 (留空不变)</Label>
-										<Input id="edit-password" value={editPassword} onChange={(e) => setEditPassword(e.target.value)} />
-									</div>
-								</div>
-								<DialogFooter>
-									<Button variant="outline" onClick={() => setEditOpen(false)}>
-										取消
-									</Button>
-									<Button onClick={saveEdit} disabled={loading}>
-										{loading ? '保存中...' : '保存'}
-									</Button>
-								</DialogFooter>
-							</DialogContent>
-						</Dialog>
-					</>
-				)}
+				{/* 用户管理与积分充值表 */}
+				<Card className="bg-[#161b22] border-[#30363d]">
+					<CardHeader className="py-3 px-4 border-b border-[#30363d]">
+						<CardTitle className="text-sm text-white flex items-center gap-1.5">
+							<Users className="w-4 h-4 text-blue-400" />
+							会员管理与积分充值
+						</CardTitle>
+					</CardHeader>
+					<CardContent className="p-0 overflow-x-auto">
+						<table className="w-full text-xs text-left text-gray-300">
+							<thead className="bg-[#0d1117] text-gray-400 border-b border-[#30363d]">
+								<tr>
+									<th className="py-2.5 px-4">ID</th>
+									<th className="py-2.5 px-4">用户名</th>
+									<th className="py-2.5 px-4">邮箱</th>
+									<th className="py-2.5 px-4">称号</th>
+									<th className="py-2.5 px-4">当前积分</th>
+									<th className="py-2.5 px-4">角色</th>
+									<th className="py-2.5 px-4 text-right">操作</th>
+								</tr>
+							</thead>
+							<tbody className="divide-y divide-[#21262d]">
+								{users.map(u => (
+									<tr key={u.id} className="hover:bg-[#1c2128]">
+										<td className="py-3 px-4">{u.id}</td>
+										<td className="py-3 px-4 font-bold text-white">{u.username}</td>
+										<td className="py-3 px-4 text-gray-400">{u.email}</td>
+										<td className="py-3 px-4">
+											<span className="bg-blue-950/60 text-blue-300 border border-blue-800/60 px-1.5 py-0.5 rounded text-[11px]">
+												{u.title || '🌱 初来乍到'}
+											</span>
+										</td>
+										<td className="py-3 px-4 font-bold text-yellow-400">
+											✨ {u.points ?? 0}
+										</td>
+										<td className="py-3 px-4">
+											<span className={`px-1.5 py-0.5 rounded text-[10px] ${u.role === 'admin' ? 'bg-amber-900/40 text-amber-300 border border-amber-800' : 'bg-gray-800 text-gray-400'}`}>
+												{u.role === 'admin' ? '站长管理员' : '普通会员'}
+											</span>
+										</td>
+										<td className="py-3 px-4 text-right">
+											{/* 充值/扣除积分快捷按钮 */}
+											<Button
+												size="sm"
+												onClick={() => handleAdjustPoints(u.id, u.username, u.points ?? 0)}
+												className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-6 px-2.5"
+											>
+												<Coins className="w-3 h-3 mr-1" />
+												充值/扣除积分
+											</Button>
+										</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+					</CardContent>
+				</Card>
 			</div>
 		</PageShell>
 	);
