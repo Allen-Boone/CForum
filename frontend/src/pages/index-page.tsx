@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Image as ImageIcon, Sparkles, Trophy, Lock, Pin, Trash2, Award, Gift } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Image as ImageIcon, Sparkles, Trophy, Lock, Pin, Trash2, Award } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,51 @@ const DEFAULT_CATEGORIES: Category[] = [
 	{ id: 8, name: '站长交流', created_at: '' },
 	{ id: 9, name: '公告', created_at: '' }
 ];
+
+// 仿图片风格的彩色卡通笑脸头像配色池
+const SMILEY_THEMES = [
+	{ bg: '#4ade80', face: '🤩' },
+	{ bg: '#c084fc', face: '😂' },
+	{ bg: '#fde047', face: '😄' },
+	{ bg: '#e879f9', face: '🥹' },
+	{ bg: '#fbbf24', face: '🤨' },
+	{ bg: '#facc15', face: '😑' },
+	{ bg: '#22c55e', face: '🥲' },
+	{ bg: '#38bdf8', face: '😮' },
+	{ bg: '#fb923c', face: '😎' },
+	{ bg: '#2dd4bf', face: '😁' },
+	{ bg: '#f472b6', face: '🥳' },
+	{ bg: '#818cf8', face: '🤖' }
+];
+
+function CuteCircleAvatar({ name, avatarUrl, index }: { name: string; avatarUrl?: string | null; index: number }) {
+	const theme = SMILEY_THEMES[index % SMILEY_THEMES.length];
+	return (
+		<div className="flex flex-col items-center group cursor-pointer">
+			<div className="relative w-11 h-11">
+				{avatarUrl ? (
+					<img
+						src={avatarUrl}
+						alt={name}
+						className="w-11 h-11 rounded-full object-cover border border-[#30363d] group-hover:scale-105 transition-transform"
+					/>
+				) : (
+					<div
+						style={{ backgroundColor: theme.bg }}
+						className="w-11 h-11 rounded-full flex items-center justify-center text-xl shadow-inner group-hover:scale-105 transition-transform select-none"
+					>
+						{theme.face}
+					</div>
+				)}
+				{/* 右下角在线翠绿小圆点 */}
+				<span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-[#3fb950] border-2 border-[#161b22]" />
+			</div>
+			<span className="mt-1.5 text-[11px] text-gray-300 group-hover:text-white truncate w-14 text-center">
+				{name}
+			</span>
+		</div>
+	);
+}
 
 export function IndexPage() {
 	const token = getToken();
@@ -38,13 +83,29 @@ export function IndexPage() {
 	const [uploading, setUploading] = React.useState<boolean>(false);
 	const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+	// 社区统计与在线状态
+	const [commStats, setCommStats] = React.useState<{
+		topics: number;
+		replies: number;
+		users: number;
+		latest_users: Array<{ id: number; username: string; avatar_url?: string | null }>;
+	}>({
+		topics: 0,
+		replies: 0,
+		users: 0,
+		latest_users: []
+	});
+
 	React.useEffect(() => {
 		async function init() {
 			try {
 				const cats = await apiFetch<Category[]>('/categories');
-				if (cats && cats.length >= 5) {
-					setCategories(cats);
-				}
+				if (cats && cats.length >= 5) setCategories(cats);
+			} catch (_) {}
+
+			try {
+				const st = await apiFetch<any>('/community-stats');
+				if (st) setCommStats(st);
 			} catch (_) {}
 
 			if (token) {
@@ -182,7 +243,6 @@ export function IndexPage() {
 		}
 	}
 
-	// 站长好帖加精 & 自动发奖弹窗
 	async function handleSetBadgeAndReward(postId: number, authorName: string) {
 		const choice = prompt(
 			`【站长好帖授勋 & 自动发奖】\n正在为作者【${authorName}】的帖子授勋：\n\n请输入数字选择勋章（系统将自动向作者账户发放对应积分奖励）：\n1 = 💎 精华（自动奖励作者 +50 积分）\n2 = 🔥 推荐（自动奖励作者 +20 积分）\n3 = 🏆 神帖（自动奖励作者 +100 积分）\n4 = ✨ 原创（自动奖励作者 +30 积分）\n0 = 取消该帖勋章`,
@@ -234,40 +294,19 @@ export function IndexPage() {
 		}
 	}
 
-	// 根据不同荣誉徽章渲染绚丽色彩
 	function renderBadge(badge?: string | null) {
 		if (!badge) return null;
 		switch (badge) {
 			case '精华':
-				return (
-					<span className="bg-purple-600/90 text-white text-[11px] font-bold px-1.5 py-0.2 rounded shadow-sm flex items-center gap-0.5">
-						💎 精华
-					</span>
-				);
+				return <span className="bg-purple-600/90 text-white text-[11px] font-bold px-1.5 py-0.2 rounded shadow-sm">💎 精华</span>;
 			case '推荐':
-				return (
-					<span className="bg-rose-600/90 text-white text-[11px] font-bold px-1.5 py-0.2 rounded shadow-sm flex items-center gap-0.5">
-						🔥 推荐
-					</span>
-				);
+				return <span className="bg-rose-600/90 text-white text-[11px] font-bold px-1.5 py-0.2 rounded shadow-sm">🔥 推荐</span>;
 			case '神帖':
-				return (
-					<span className="bg-gradient-to-r from-amber-500 to-yellow-600 text-black text-[11px] font-extrabold px-1.5 py-0.2 rounded shadow-sm flex items-center gap-0.5">
-						🏆 神帖
-					</span>
-				);
+				return <span className="bg-gradient-to-r from-amber-500 to-yellow-600 text-black text-[11px] font-extrabold px-1.5 py-0.2 rounded shadow-sm">🏆 神帖</span>;
 			case '原创':
-				return (
-					<span className="bg-emerald-600/90 text-white text-[11px] font-bold px-1.5 py-0.2 rounded shadow-sm flex items-center gap-0.5">
-						✨ 原创
-					</span>
-				);
+				return <span className="bg-emerald-600/90 text-white text-[11px] font-bold px-1.5 py-0.2 rounded shadow-sm">✨ 原创</span>;
 			default:
-				return (
-					<span className="bg-blue-600 text-white text-[11px] font-bold px-1.5 py-0.2 rounded">
-						{badge}
-					</span>
-				);
+				return <span className="bg-blue-600 text-white text-[11px] font-bold px-1.5 py-0.2 rounded">{badge}</span>;
 		}
 	}
 
@@ -287,6 +326,30 @@ export function IndexPage() {
 		const found = DEFAULT_CATEGORIES.find(c => c.id === Number(catId));
 		return found ? found.name : '茶水间';
 	}
+
+	// 组装最新用户与在线用户展示列表（优先展示数据库真实注册会员，不够 8 个自动补齐氛围成员）
+	const fallbackAtmosphereUsers = [
+		{ id: 101, username: 'Alex_M', avatar_url: null },
+		{ id: 102, username: 'Sally', avatar_url: null },
+		{ id: 103, username: 'strings', avatar_url: null },
+		{ id: 104, username: '幸运365', avatar_url: null },
+		{ id: 105, username: 'spr1ng', avatar_url: null },
+		{ id: 106, username: 'Nathan', avatar_url: null },
+		{ id: 107, username: 'baijiu', avatar_url: null },
+		{ id: 108, username: '极客老王', avatar_url: null }
+	];
+
+	const displayLatestUsers = [
+		...commStats.latest_users,
+		...fallbackAtmosphereUsers
+	].slice(0, 8);
+
+	const displayOnlineUsers = [
+		...commStats.latest_users,
+		...fallbackAtmosphereUsers.slice().reverse()
+	].slice(0, 8);
+
+	const onlineCount = Math.max(18, commStats.users * 3 + 12);
 
 	return (
 		<PageShell>
@@ -447,16 +510,12 @@ export function IndexPage() {
 
 										<div className="flex-1 min-w-0">
 											<div className="flex items-center gap-1.5 flex-wrap">
-												{/* 置顶标签 */}
 												{post.is_pinned === 1 && (
 													<span className="bg-[#b35900] text-white text-[11px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
 														置顶
 													</span>
 												)}
-
-												{/* 精华 / 推荐 / 神帖 / 原创 荣誉勋章 */}
 												{renderBadge(post.badge)}
-
 												<a
 													href={`/post?id=${post.id}`}
 													className={`text-[15px] font-medium leading-snug group-hover:text-blue-400 transition-colors ${
@@ -465,8 +524,6 @@ export function IndexPage() {
 												>
 													{post.title}
 												</a>
-
-												{/* 站长打赏奖励展示 */}
 												{(post.reward_points ?? 0) > 0 && (
 													<span className="bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[10px] px-1.5 py-0.2 rounded-full font-bold flex items-center gap-0.5">
 														🎁 已赏 +{post.reward_points}分
@@ -486,7 +543,6 @@ export function IndexPage() {
 													{getCategoryName(post.category_id, post.category_name)}
 												</span>
 
-												{/* 站长快捷操作栏：加精发奖、置顶、删除 */}
 												{user.role === 'admin' && (
 													<span className="ml-auto flex items-center gap-2.5 opacity-85 hover:opacity-100">
 														<button
@@ -529,6 +585,7 @@ export function IndexPage() {
 					)}
 				</div>
 
+				{/* 右侧边栏 */}
 				<div className="lg:col-span-3 space-y-4">
 					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 shadow-sm text-sm">
 						{user ? (
@@ -605,33 +662,9 @@ export function IndexPage() {
 						)}
 					</div>
 
+					{/* 快捷功能 */}
 					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3.5 shadow-sm text-xs space-y-2">
-						<span className="font-bold text-gray-300 block mb-2">快捷功能</span>
+						<span className="font-bold text-gray-200 block mb-2">快捷功能</span>
 						<div className="grid grid-cols-2 gap-y-2 text-gray-400">
 							<span onClick={handleCheckin} className="hover:text-emerald-400 cursor-pointer text-emerald-500 font-medium">• 每日签到（领积分）</span>
-							<span onClick={handleSwitchTitle} className="hover:text-blue-400 cursor-pointer">• 我的称号仓库</span>
-							<span onClick={() => setActiveTab('featured')} className="hover:text-purple-400 cursor-pointer text-purple-400 font-medium">• 💎 精华神帖列表</span>
-							<span className="hover:text-white cursor-pointer">• 社区热榜</span>
-							<span className="hover:text-white cursor-pointer">• 用户榜单</span>
-							<span className="hover:text-white cursor-pointer">• 站点地图</span>
-						</div>
-					</div>
-
-					<div className="text-[11px] text-gray-400 px-1 leading-relaxed space-y-1">
-						<p>© 2026 自由论坛 · 轻量极客生活社区</p>
-						<p className="text-gray-300 font-medium">
-							关注TG频道：
-							<a href="https://t.me/eziyuan_1" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline mr-2">
-								@eziyuan_1
-							</a>
-							TG群组：
-							<a href="https://t.me/eziyuan_2" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">
-								@eziyuan_2
-							</a>
-						</p>
-					</div>
-				</div>
-			</div>
-		</PageShell>
-	);
-}
+							<span onClick={handleSwitchTitle} className="hover:tex
