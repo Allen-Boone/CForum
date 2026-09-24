@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -176,8 +176,10 @@ export function IndexPage() {
 	});
 	const [checkedIn, setCheckedIn] = React.useState<boolean>(() => Boolean((user as any)?.checked_in_today));
 	const [uploading, setUploading] = React.useState<boolean>(false);
+	const [avatarUploading, setAvatarUploading] = React.useState<boolean>(false);
 	const [uploadNotice, setUploadNotice] = React.useState<string>('');
 	const fileInputRef = React.useRef<HTMLInputElement>(null);
+	const avatarInputRef = React.useRef<HTMLInputElement>(null);
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
 	const [commStats, setCommStats] = React.useState<{
@@ -187,6 +189,13 @@ export function IndexPage() {
 		latest_users: Array<{ id: number; username: string; avatar_url?: string | null }>;
 	}>({ topics: 0, replies: 0, users: 0, latest_users: [] });
 
+	const loadStats = React.useCallback(async () => {
+		try {
+			const st = await apiFetch<any>('/community-stats');
+			if (st) setCommStats(st);
+		} catch (_) {}
+	}, []);
+
 	React.useEffect(() => {
 		async function init() {
 			try {
@@ -194,10 +203,7 @@ export function IndexPage() {
 				if (cats && cats.length >= 5) setCategories(cats);
 			} catch (_) {}
 
-			try {
-				const st = await apiFetch<any>('/community-stats');
-				if (st) setCommStats(st);
-			} catch (_) {}
+			loadStats();
 
 			if (token) {
 				try {
@@ -220,7 +226,7 @@ export function IndexPage() {
 			}
 		}
 		init();
-	}, [token]);
+	}, [token, loadStats]);
 
 	async function loadPosts() {
 		setLoading(true);
@@ -256,13 +262,58 @@ export function IndexPage() {
 		}
 	}
 
-	function handleSwitchTitle() {
+	async function handleSwitchTitle() {
 		const titles = ['👑 站长', '🐉 传说之龙', '⭐ 论坛之星', '🌏 正式成员', '🌱 初来乍到'];
 		const next = prompt('请选择或输入你想佩戴的称号：\n' + titles.join('、'), userTitle);
 		if (next) {
 			const trimmed = next.trim();
 			setUserTitle(trimmed);
-			if (user) setUser({ ...user, title: trimmed } as any);
+			if (user) {
+				const updated = { ...user, title: trimmed } as any;
+				setUser(updated);
+				setCurrentUser(updated);
+				await apiFetch('/user/avatar', {
+					method: 'POST',
+					headers: getSecurityHeaders('POST'),
+					body: JSON.stringify({ title: trimmed })
+				}).catch(() => {});
+			}
+		}
+	}
+
+	// 用户点击头像一键上传自定义个性头像！
+	async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+		const file = e.target.files?.[0];
+		if (!file || !user) return;
+		setAvatarUploading(true);
+		try {
+			const formData = new FormData();
+			formData.append('file', file);
+			const res = await fetch('https://cforum.day86530.workers.dev/api/upload', {
+				method: 'POST',
+				headers: { Authorization: `Bearer ${token}` },
+				body: formData
+			});
+			const data = await res.json() as any;
+			if (data.url) {
+				await apiFetch('/user/avatar', {
+					method: 'POST',
+					headers: getSecurityHeaders('POST'),
+					body: JSON.stringify({ avatar_url: data.url })
+				});
+				const updated = { ...user, avatar_url: data.url };
+				setUser(updated);
+				setCurrentUser(updated);
+				loadPosts();
+				loadStats();
+				alert('🎉 专属个性头像更换成功！全站已实时生效！');
+			} else {
+				alert('头像上传失败：' + (data.error || '请重试'));
+			}
+		} catch (err: any) {
+			alert('上传异常：' + err.message);
+		} finally {
+			setAvatarUploading(false);
 		}
 	}
 
@@ -341,6 +392,7 @@ export function IndexPage() {
 			setShowEditor(false);
 			setSelectedCategory('all');
 			loadPosts();
+			loadStats();
 		} catch (err: any) {
 			alert(err.message || '发布失败');
 		}
@@ -387,6 +439,7 @@ export function IndexPage() {
 		try {
 			await apiFetch(`/posts/${postId}`, { method: 'DELETE', headers: getSecurityHeaders('DELETE') });
 			loadPosts();
+			loadStats();
 		} catch (err: any) {
 			alert('删除失败: ' + err.message);
 		}
@@ -528,8 +581,13 @@ export function IndexPage() {
 							) : (
 								filteredPosts.map(post => (
 									<div key={post.id} className="p-3.5 hover:bg-[#1c2128] transition-colors flex items-start gap-3 group">
-										<div className="w-10 h-10 rounded-md bg-[#21262d] flex-shrink-0 flex items-center justify-center font-bold text-gray-300 border border-[#30363d]">
-											<span className="text-xs text-blue-400">{(post.author_name || 'U').slice(0, 2).toUpperCase()}</span>
+										{/* 列表头像：优先展示用户自定义上传的头像！ */}
+										<div className="w-10 h-10 rounded-md bg-[#21262d] flex-shrink-0 flex items-center justify-center font-bold text-gray-300 overflow-hidden border border-[#30363d]">
+											{post.author_avatar ? (
+												<img src={post.author_avatar} alt="" className="w-full h-full object-cover" />
+											) : (
+												<span className="text-xs text-blue-400">{(post.author_name || 'U').slice(0, 2).toUpperCase()}</span>
+											)}
 										</div>
 										<div className="flex-1 min-w-0">
 											<div className="flex items-center gap-1.5 flex-wrap">
@@ -579,7 +637,6 @@ export function IndexPage() {
 						</div>
 					)}
 
-					{/* 新增：箭头指向的正中央底部黄金引流卡片！看完帖子视线直接落在这里 */}
 					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5 text-center space-y-3 shadow-md">
 						<div className="flex items-center justify-center gap-2 text-sm font-bold text-white">
 							<Send className="w-4 h-4 text-sky-400" />
@@ -614,12 +671,41 @@ export function IndexPage() {
 					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 text-sm">
 						{user ? (
 							<div className="space-y-3">
+								<input
+									type="file"
+									ref={avatarInputRef}
+									onChange={handleAvatarUpload}
+									accept="image/*"
+									className="hidden"
+								/>
 								<div className="flex items-center gap-3">
-									<div className="w-12 h-12 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center font-bold text-blue-400">
-										{user.username.slice(0, 1).toUpperCase()}
+									{/* 点击头像直接触发本地图片上传换头像！ */}
+									<div
+										onClick={() => avatarInputRef.current?.click()}
+										title="点击上传更换您的专属个性头像"
+										className="relative w-12 h-12 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center font-bold text-blue-400 cursor-pointer overflow-hidden group"
+									>
+										{user.avatar_url ? (
+											<img src={user.avatar_url} alt={user.username} className="w-full h-full object-cover" />
+										) : (
+											<span>{user.username.slice(0, 1).toUpperCase()}</span>
+										)}
+										<div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+											<Camera className="w-4 h-4 text-white" />
+										</div>
 									</div>
 									<div className="flex-1 min-w-0">
-										<h4 className="font-bold text-white text-base truncate">{user.username}</h4>
+										<div className="flex items-center justify-between">
+											<h4 className="font-bold text-white text-base truncate">{user.username}</h4>
+											<button
+												type="button"
+												onClick={() => avatarInputRef.current?.click()}
+												className="text-[11px] text-sky-400 hover:underline flex items-center gap-0.5"
+											>
+												<Camera className="w-3 h-3" />
+												{avatarUploading ? '上传中' : '换头像'}
+											</button>
+										</div>
 										<button onClick={handleSwitchTitle} className="mt-1 text-[11px] px-1.5 py-0.5 rounded bg-blue-950/60 text-blue-300 border border-blue-800/60 flex items-center gap-1">
 											<Trophy className="w-3 h-3 text-yellow-500" /> {userTitle}
 										</button>
@@ -653,11 +739,11 @@ export function IndexPage() {
 						<span className="font-bold text-gray-200 block mb-2">快捷功能</span>
 						<div className="grid grid-cols-2 gap-y-2 text-gray-400">
 							<span onClick={handleCheckin} className="hover:text-emerald-400 cursor-pointer text-emerald-500 font-medium">• 每日签到（领积分）</span>
+							<span onClick={() => avatarInputRef.current?.click()} className="hover:text-sky-400 cursor-pointer text-sky-400 font-medium">• 📷 更换个性头像</span>
 							<span onClick={handleSwitchTitle} className="hover:text-blue-400 cursor-pointer">• 我的称号仓库</span>
 							<span onClick={() => setActiveTab('featured')} className="hover:text-purple-400 cursor-pointer text-purple-400 font-medium">• 💎 精华神帖列表</span>
 							<span className="hover:text-white cursor-pointer">• 社区热榜</span>
 							<span className="hover:text-white cursor-pointer">• 用户榜单</span>
-							<span className="hover:text-white cursor-pointer">• 站点地图</span>
 						</div>
 					</div>
 
