@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,7 +50,6 @@ function CuteCircleAvatar({ name, avatarUrl, index }: { name: string; avatarUrl?
 	);
 }
 
-// 昼夜温情时钟（夜晚全线升级为护眼清晰暖金色）
 function TimeGreetingBanner() {
 	const [timeText, setTimeText] = React.useState('');
 	const [isNight, setIsNight] = React.useState(false);
@@ -137,25 +136,15 @@ function TimeGreetingBanner() {
 					: 'bg-[#161b22] border border-sky-500/40 shadow-sky-950/20'
 			}`}
 		>
-			{/* 时间部分：白天电光蓝，夜晚换成超级清晰护眼的明亮暖金黄！ */}
 			<div className="flex items-center gap-1.5 flex-shrink-0">
 				<Clock className={`w-3.5 h-3.5 ${isNight ? 'text-amber-400' : 'text-sky-400'}`} />
 				<span className={`font-mono font-bold tracking-wide text-[13px] ${isNight ? 'text-[#facc15]' : 'text-[#38bdf8]'}`}>
 					{timeText}
 				</span>
 			</div>
-
 			<span className="hidden sm:inline-block text-gray-600 select-none">|</span>
-
-			{/* 标签与问候语：夜晚纯金高亮，一目了然 */}
 			<div className="flex items-center gap-2 flex-wrap">
-				<span
-					className={`inline-flex items-center gap-1 rounded px-2 py-0.5 font-bold text-[11px] shadow-sm select-none ${
-						isNight
-							? 'bg-amber-500/20 text-[#fde047] border border-amber-500/50'
-							: 'bg-amber-500/20 text-[#fde047] border border-amber-500/50'
-					}`}
-				>
+				<span className="inline-flex items-center gap-1 rounded px-2 py-0.5 font-bold text-[11px] shadow-sm select-none bg-amber-500/20 text-[#fde047] border border-amber-500/50">
 					<span>{tag.icon}</span>
 					<span>{tag.tag}</span>
 				</span>
@@ -448,7 +437,7 @@ export function IndexPage() {
 			<TimeGreetingBanner />
 
 			<div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-				<div className="lg:col-span-9 space-y-3">
+				<div className="lg:col-span-9 space-y-4">
 					<div className="flex items-center justify-between border-b border-[#30363d] pb-2">
 						<div className="flex items-center gap-4 text-xs font-semibold">
 							<button onClick={() => setActiveTab('comment')} className={`pb-1 ${activeTab === 'comment' ? 'text-white border-b-2 border-blue-500' : 'text-gray-400'}`}>
@@ -589,8 +578,38 @@ export function IndexPage() {
 							)}
 						</div>
 					)}
+
+					{/* 新增：箭头指向的正中央底部黄金引流卡片！看完帖子视线直接落在这里 */}
+					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-5 text-center space-y-3 shadow-md">
+						<div className="flex items-center justify-center gap-2 text-sm font-bold text-white">
+							<Send className="w-4 h-4 text-sky-400" />
+							<span>自由论坛官方 Telegram 防失联与福利矩阵</span>
+						</div>
+						<div className="flex flex-wrap items-center justify-center gap-4 text-xs">
+							<a
+								href="https://t.me/eziyuan_1"
+								target="_blank"
+								rel="noreferrer"
+								className="inline-flex items-center gap-1.5 bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 px-4 py-1.5 rounded-full font-semibold transition-all"
+							>
+								📢 关注TG频道：<span className="text-yellow-300 underline">@eziyuan_1</span>
+							</a>
+							<a
+								href="https://t.me/eziyuan_2"
+								target="_blank"
+								rel="noreferrer"
+								className="inline-flex items-center gap-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 px-4 py-1.5 rounded-full font-semibold transition-all"
+							>
+								💬 加入TG群组：<span className="text-yellow-300 underline">@eziyuan_2</span>
+							</a>
+						</div>
+						<p className="text-[11px] text-gray-500 pt-1">
+							© 2026 自由论坛 · 轻量极客生活社区 · 规则共决 · 资源共享
+						</p>
+					</div>
 				</div>
 
+				{/* 右侧边栏 */}
 				<div className="lg:col-span-3 space-y-4">
 					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 text-sm">
 						{user ? (
@@ -667,14 +686,6 @@ export function IndexPage() {
 								<CuteCircleAvatar key={`online-${u.id}-${idx}`} name={u.username} avatarUrl={u.avatar_url} index={idx + 3} />
 							))}
 						</div>
-					</div>
-
-					<div className="text-[11px] text-gray-400 px-1 leading-relaxed space-y-1">
-						<p>© 2026 自由论坛 · 轻量极客生活社区</p>
-						<p className="text-gray-300 font-medium">
-							关注TG频道：<a href="https://t.me/eziyuan_1" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline mr-2">@eziyuan_1</a>
-							TG群组：<a href="https://t.me/eziyuan_2" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">@eziyuan_2</a>
-						</p>
 					</div>
 				</div>
 			</div>
