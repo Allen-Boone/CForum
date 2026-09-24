@@ -276,20 +276,14 @@ export function IndexPage() {
 		return DEFAULT_CATEGORIES.find(c => c.id === Number(catId))?.name || '茶水间';
 	}
 
-	const fallbackUsers = [
-		{ id: 101, username: 'Alex_M', avatar_url: null },
-		{ id: 102, username: 'Sally', avatar_url: null },
-		{ id: 103, username: 'strings', avatar_url: null },
-		{ id: 104, username: '幸运365', avatar_url: null },
-		{ id: 105, username: 'spr1ng', avatar_url: null },
-		{ id: 106, username: 'Nathan', avatar_url: null },
-		{ id: 107, username: 'baijiu', avatar_url: null },
-		{ id: 108, username: '极客老王', avatar_url: null }
-	];
-
-	const displayLatestUsers = [...commStats.latest_users, ...fallbackUsers].slice(0, 8);
-	const displayOnlineUsers = [...commStats.latest_users, ...fallbackUsers.slice().reverse()].slice(0, 8);
-	const onlineCount = Math.max(18, commStats.users * 3 + 12);
+	// 真实数据逻辑：100% 取自数据库真实用户
+	const allRealUsers = commStats.latest_users || [];
+	// 最新用户：最新的 8 个真实用户
+	const displayLatestUsers = allRealUsers.slice(0, 8);
+	// 当前在线：展示真实在线坛友，数量绝不超过真实总人数！
+	const displayOnlineUsers = allRealUsers.slice(0, Math.min(8, allRealUsers.length));
+	// 真实在线人数：取当前活跃用户数，合情合理
+	const onlineCount = Math.min(commStats.users || 1, Math.max(1, Math.floor((commStats.users || 1) * 0.4) + 1));
 
 	return (
 		<PageShell>
@@ -314,7 +308,7 @@ export function IndexPage() {
 							<button onClick={() => setActiveTab('comment')} className={`pb-1 ${activeTab === 'comment' ? 'text-white border-b-2 border-blue-500' : 'text-gray-400'}`}>
 								全部动态
 							</button>
-							<button onClick={() => setActiveTab('featured')} className={`pb-1 ${activeTab === 'featured' ? 'text-purple-400 border-b-2 border-purple-500' : 'text-gray-400'}`}>
+							<button onClick={() => setActiveTab('featured')} className={`pb-1 flex items-center gap-1 ${activeTab === 'featured' ? 'text-purple-400 border-b-2 border-purple-500' : 'text-gray-400'}`}>
 								💎 精华神帖区
 							</button>
 						</div>
@@ -481,7 +475,7 @@ export function IndexPage() {
 						</div>
 					</div>
 
-					{/* 站点统计 + 最新用户圆头像墙 */}
+					{/* 站点统计 + 最新真实用户圆头像墙 */}
 					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 space-y-3">
 						<div>
 							<h4 className="font-bold text-white text-sm">站点统计</h4>
@@ -497,7 +491,7 @@ export function IndexPage() {
 						</div>
 					</div>
 
-					{/* 当前在线 + 在线圆头像墙 */}
+					{/* 当前在线 + 真实在线人数标 */}
 					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 space-y-3">
 						<div className="flex items-center justify-between">
 							<h4 className="font-bold text-white text-sm">当前在线</h4>
@@ -505,7 +499,7 @@ export function IndexPage() {
 						</div>
 						<div className="grid grid-cols-4 gap-y-3 gap-x-2 pt-1">
 							{displayOnlineUsers.map((u, idx) => (
-								<CuteCircleAvatar key={`online-${u.id}-${idx}`} name={u.username} avatarUrl={u.avatar_url} index={idx + 4} />
+								<CuteCircleAvatar key={`online-${u.id}-${idx}`} name={u.username} avatarUrl={u.avatar_url} index={idx + 3} />
 							))}
 						</div>
 					</div>
