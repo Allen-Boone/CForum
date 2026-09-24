@@ -47,7 +47,6 @@ export function IndexPage() {
 		}
 	}
 
-	// 每日签到：携带完整 Token，成功后同步更新本地缓存！
 	async function handleCheckin() {
 		if (checkedIn) return;
 		try {
@@ -414,9 +413,18 @@ export function IndexPage() {
 						</div>
 					</div>
 
-					<div className="text-[11px] text-gray-500 px-1 leading-relaxed">
+					<div className="text-[11px] text-gray-400 px-1 leading-relaxed space-y-1">
 						<p>© 2026 自由论坛 · 轻量极客生活社区</p>
-						<p className="mt-1">Powered by Cloudflare Pages & D1 Edge</p>
+						<p className="text-gray-300 font-medium">
+							关注TG频道：
+							<a href="https://t.me/eziyuan_1" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline mr-2">
+								@eziyuan_1
+							</a>
+							TG群组：
+							<a href="https://t.me/eziyuan_2" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">
+								@eziyuan_2
+							</a>
+						</p>
 					</div>
 				</div>
 			</div>
