@@ -79,6 +79,12 @@ export default {
 			return jsonResponse({ error: errString }, 500);
 		};
 
+		// 自动确保精华徽章字段与打赏积分字段存在（免去手动敲 SQL）
+		const ensurePostColumns = async () => {
+			await env.cforum_db.prepare('ALTER TABLE posts ADD COLUMN badge TEXT').run().catch(() => {});
+			await env.cforum_db.prepare('ALTER TABLE posts ADD COLUMN reward_points INTEGER DEFAULT 0').run().catch(() => {});
+		};
+
 		// GET /api/config
 		if (url.pathname === '/api/config' && method === 'GET') {
 			try {
@@ -94,7 +100,7 @@ export default {
 			}
 		}
 
-		// GET /api/me (实时同步积分与签到状态)
+		// GET /api/me
 		if (url.pathname === '/api/me' && method === 'GET') {
 			try {
 				const userPayload = await authenticate(request);
@@ -255,16 +261,19 @@ export default {
 			}
 		}
 
-		// GET /api/posts (修复 views 字段映射，找回所有已发帖子！)
+		// GET /api/posts (包含精华 badge 与获赏积分 reward_points)
 		if (url.pathname === '/api/posts' && method === 'GET') {
 			try {
-				const limit = parseInt(url.searchParams.get('limit') || '30');
+				await ensurePostColumns();
+				const limit = parseInt(url.searchParams.get('limit') || '50');
 				const offset = parseInt(url.searchParams.get('offset') || '0');
 				const categoryId = url.searchParams.get('category_id');
 
 				let query = `
 					SELECT 
-						p.id, p.author_id, p.title, p.content, p.category_id, p.is_pinned, COALESCE(p.views, 0) as view_count, p.created_at,
+						p.id, p.author_id, p.title, p.content, p.category_id, p.is_pinned,
+						p.badge, COALESCE(p.reward_points, 0) as reward_points,
+						COALESCE(p.views, 0) as view_count, p.created_at,
 						u.username as author_name, u.avatar_url as author_avatar, u.role as author_role, u.title as author_title,
 						c.name as category_name,
 						(SELECT COUNT(*) FROM comments WHERE post_id = p.id) as comment_count,
@@ -290,7 +299,7 @@ export default {
 			}
 		}
 
-		// POST /api/posts (发布新帖)
+		// POST /api/posts
 		if (url.pathname === '/api/posts' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -308,15 +317,52 @@ export default {
 			}
 		}
 
-		// GET /api/posts/:id (查看单篇帖子详情 + 浏览量 +1)
+		// POST /api/posts/:id/badge (站长核心神权：设置精华/推荐/神帖/原创 + 自动给作者发放积分奖励！)
+		if (url.pathname.match(/^\/api\/posts\/\d+\/badge$/) && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
+
+				await ensurePostColumns();
+				const postId = url.pathname.split('/')[3];
+				const body = await request.json() as any;
+				const badge = body.badge || null; // '精华' | '推荐' | '神帖' | '原创' | null
+				const bonus = parseInt(body.bonus || '0');
+
+				const post = await env.cforum_db.prepare('SELECT author_id, reward_points FROM posts WHERE id = ?').bind(postId).first<{ author_id: number; reward_points: number }>();
+				if (!post) return jsonResponse({ error: '帖子不存在' }, 404);
+
+				const newRewardTotal = Math.max(0, (post.reward_points || 0) + bonus);
+
+				await env.cforum_db.prepare(
+					'UPDATE posts SET badge = ?, reward_points = ? WHERE id = ?'
+				).bind(badge, badge ? newRewardTotal : 0, postId).run();
+
+				// 如果有奖励积分，自动打入发帖作者的账户！
+				if (bonus > 0) {
+					await env.cforum_db.prepare(
+						'UPDATE users SET points = COALESCE(points, 0) + ? WHERE id = ?'
+					).bind(bonus, post.author_id).run();
+				}
+
+				return jsonResponse({ success: true, badge, bonus });
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// GET /api/posts/:id
 		if (url.pathname.match(/^\/api\/posts\/\d+$/) && method === 'GET') {
 			try {
+				await ensurePostColumns();
 				const postId = url.pathname.split('/')[3];
 				await env.cforum_db.prepare('UPDATE posts SET views = COALESCE(views, 0) + 1 WHERE id = ?').bind(postId).run();
 
 				const post = await env.cforum_db.prepare(`
 					SELECT 
-						p.id, p.author_id, p.title, p.content, p.category_id, p.is_pinned, COALESCE(p.views, 0) as view_count, p.created_at,
+						p.id, p.author_id, p.title, p.content, p.category_id, p.is_pinned,
+						p.badge, COALESCE(p.reward_points, 0) as reward_points,
+						COALESCE(p.views, 0) as view_count, p.created_at,
 						u.username as author_name, u.avatar_url as author_avatar, u.role as author_role, u.title as author_title,
 						c.name as category_name,
 						(SELECT COUNT(*) FROM comments WHERE post_id = p.id) as comment_count,
@@ -334,7 +380,7 @@ export default {
 			}
 		}
 
-		// GET /api/posts/:id/comments (获取帖子下的所有回帖评论)
+		// GET /api/posts/:id/comments
 		if (url.pathname.match(/^\/api\/posts\/\d+\/comments$/) && method === 'GET') {
 			try {
 				const postId = url.pathname.split('/')[3];
@@ -354,7 +400,7 @@ export default {
 			}
 		}
 
-		// POST /api/posts/:id/comments (发表评论/回帖)
+		// POST /api/posts/:id/comments
 		if (url.pathname.match(/^\/api\/posts\/\d+\/comments$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -375,7 +421,7 @@ export default {
 			}
 		}
 
-		// POST /api/posts/:id/like (点赞/取消点赞)
+		// POST /api/posts/:id/like
 		if (url.pathname.match(/^\/api\/posts\/\d+\/like$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -397,7 +443,7 @@ export default {
 			}
 		}
 
-		// POST /api/posts/:id/pin (站长置顶/取消置顶帖子)
+		// POST /api/posts/:id/pin
 		if (url.pathname.match(/^\/api\/posts\/\d+\/pin$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -414,7 +460,7 @@ export default {
 			}
 		}
 
-		// DELETE /api/posts/:id (删除帖子)
+		// DELETE /api/posts/:id
 		if (url.pathname.match(/^\/api\/posts\/\d+$/) && method === 'DELETE') {
 			try {
 				const userPayload = await authenticate(request);
