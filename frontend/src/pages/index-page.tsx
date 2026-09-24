@@ -3,8 +3,8 @@ import { MessageSquare, Plus, Coffee, CalendarCheck, Image as ImageIcon, Sparkle
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { apiFetch, formatDate, type Category, type Post } from '@/lib/api';
-import { getToken, getUser } from '@/lib/auth';
+import { apiFetch, formatDate, getSecurityHeaders, type Category, type Post } from '@/lib/api';
+import { getToken, getUser, setUser } from '@/lib/auth';
 
 export function IndexPage() {
 	const token = getToken();
@@ -19,9 +19,8 @@ export function IndexPage() {
 	const [newContent, setNewContent] = React.useState('');
 	const [newCategoryId, setNewCategoryId] = React.useState<string>('1');
 
-	// 初始积分默认 0 分（新用户也是 0 分）
 	const [points, setPoints] = React.useState<number>(() => (user as any)?.points ?? 0);
-	const [userTitle, setUserTitle] = React.useState<string>(() => (user as any)?.title || '👑 创始站长');
+	const [userTitle, setUserTitle] = React.useState<string>(() => (user as any)?.title || (user?.role === 'admin' ? '👑 创始站长' : '🌱 初来乍到'));
 	const [checkedIn, setCheckedIn] = React.useState<boolean>(() => Boolean((user as any)?.checked_in_today));
 	const [uploading, setUploading] = React.useState<boolean>(false);
 	const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -48,32 +47,46 @@ export function IndexPage() {
 		}
 	}
 
-	// 每日签到逻辑：向后端请求，最多 10 分左右（2~10 分），入库保存！
+	// 每日签到：携带完整 Token，成功后同步更新本地缓存！
 	async function handleCheckin() {
 		if (checkedIn) return;
 		try {
 			const res = await apiFetch<{ success: boolean; reward: number; points: number }>('/checkin', {
-				method: 'POST'
+				method: 'POST',
+				headers: getSecurityHeaders('POST')
 			});
 			if (res.success) {
 				setPoints(res.points);
 				setCheckedIn(true);
-				alert(`🎉 签到成功！随机获得 +${res.reward} 论坛积分！`);
+				if (user) {
+					setUser({
+						...user,
+						points: res.points,
+						checked_in_today: true
+					} as any);
+				}
+				alert(`🎉 签到成功！获得 +${res.reward} 论坛积分！当前总积分：${res.points}`);
 			}
 		} catch (err: any) {
-			alert(err.message || '今日已签到过啦！');
-			setCheckedIn(true);
+			alert(err.message || '今日已经签过到啦！');
+			if (err.message && err.message.includes('签过')) {
+				setCheckedIn(true);
+			}
 		}
 	}
 
-	// 换称号逻辑
 	function handleSwitchTitle() {
 		const titles = ['👑 创始站长', '🐉 传说之龙', '⭐ 论坛之星', '🌏 正式成员', '🌱 初来乍到'];
 		const next = prompt('请选择或输入你想佩戴的称号：\n' + titles.join('、'), userTitle);
-		if (next) setUserTitle(next.trim());
+		if (next) {
+			const trimmed = next.trim();
+			setUserTitle(trimmed);
+			if (user) {
+				setUser({ ...user, title: trimmed } as any);
+			}
+		}
 	}
 
-	// 图片上传处理 (R2)
 	async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
 		const file = e.target.files?.[0];
 		if (!file) return;
@@ -108,6 +121,7 @@ export function IndexPage() {
 		try {
 			await apiFetch('/posts', {
 				method: 'POST',
+				headers: getSecurityHeaders('POST'),
 				body: JSON.stringify({
 					title: newTitle,
 					content: newContent,
@@ -142,7 +156,6 @@ export function IndexPage() {
 
 	return (
 		<PageShell>
-			{/* 第二级胶囊分类栏 */}
 			<div className="flex flex-wrap items-center gap-2 mb-4">
 				{navPills.map(pill => (
 					<button
@@ -159,11 +172,8 @@ export function IndexPage() {
 				))}
 			</div>
 
-			{/* 左右双栏结构 */}
 			<div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-				{/* 左侧帖子主体列表 */}
 				<div className="lg:col-span-9 space-y-3">
-					{/* 筛选标签栏 */}
 					<div className="flex items-center justify-between border-b border-[#30363d] pb-2">
 						<div className="flex items-center gap-4 text-xs font-semibold">
 							<button
@@ -189,7 +199,6 @@ export function IndexPage() {
 						)}
 					</div>
 
-					{/* 发帖编辑器 */}
 					{showEditor && (
 						<form onSubmit={handleCreatePost} className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 space-y-3">
 							<div className="flex gap-2">
@@ -250,7 +259,6 @@ export function IndexPage() {
 						</form>
 					)}
 
-					{/* 帖子列表容器 */}
 					<div className="bg-[#161b22] border border-[#30363d] rounded-lg divide-y divide-[#21262d] overflow-hidden shadow-sm">
 						{loading ? (
 							<div className="p-8 text-center text-gray-500 text-sm">正在加载自由论坛内容...</div>
@@ -292,7 +300,7 @@ export function IndexPage() {
 
 										<div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400">
 											<span className="text-[11px] font-medium px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
-												{userTitle}
+												{post.author_title || '🌱 初来乍到'}
 											</span>
 											<span className="font-medium text-gray-300">{post.author_name || '会员'}</span>
 											<span>•</span>
@@ -318,7 +326,6 @@ export function IndexPage() {
 					</div>
 				</div>
 
-				{/* 右侧侧边栏 */}
 				<div className="lg:col-span-3 space-y-4">
 					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 shadow-sm text-sm">
 						{user ? (
@@ -342,7 +349,6 @@ export function IndexPage() {
 									</div>
 								</div>
 
-								{/* 积分与每日签到 */}
 								<div className="bg-[#0d1117] p-2.5 rounded-md border border-[#21262d] flex items-center justify-between">
 									<div>
 										<span className="text-[11px] text-gray-400 block">论坛积分</span>
