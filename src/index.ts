@@ -94,7 +94,7 @@ export default {
 			}
 		}
 
-		// GET /api/me (实时从数据库获取当前用户的最新积分、称号与签到状态)
+		// GET /api/me (实时同步积分与签到状态)
 		if (url.pathname === '/api/me' && method === 'GET') {
 			try {
 				const userPayload = await authenticate(request);
@@ -120,7 +120,7 @@ export default {
 			}
 		}
 
-		// POST /api/register (注册后直接生成登录 Token，免二次登录！)
+		// POST /api/register
 		if (url.pathname === '/api/register' && method === 'POST') {
 			try {
 				const body = await request.json() as any;
@@ -176,7 +176,7 @@ export default {
 			}
 		}
 
-		// POST /api/login (支持输入“用户名”或“邮箱”任意一种登录！)
+		// POST /api/login
 		if (url.pathname === '/api/login' && method === 'POST') {
 			try {
 				const body = await request.json() as any;
@@ -224,7 +224,7 @@ export default {
 			}
 		}
 
-		// POST /api/checkin (每日签到：随机 2~10 积分，直接入库并返回最新积分)
+		// POST /api/checkin
 		if (url.pathname === '/api/checkin' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -255,7 +255,7 @@ export default {
 			}
 		}
 
-		// GET /api/posts
+		// GET /api/posts (修复 views 字段映射，找回所有已发帖子！)
 		if (url.pathname === '/api/posts' && method === 'GET') {
 			try {
 				const limit = parseInt(url.searchParams.get('limit') || '30');
@@ -264,7 +264,7 @@ export default {
 
 				let query = `
 					SELECT 
-						p.id, p.title, p.content, p.category_id, p.is_pinned, p.view_count, p.created_at,
+						p.id, p.author_id, p.title, p.content, p.category_id, p.is_pinned, COALESCE(p.views, 0) as view_count, p.created_at,
 						u.username as author_name, u.avatar_url as author_avatar, u.role as author_role, u.title as author_title,
 						c.name as category_name,
 						(SELECT COUNT(*) FROM comments WHERE post_id = p.id) as comment_count,
@@ -290,7 +290,7 @@ export default {
 			}
 		}
 
-		// POST /api/posts
+		// POST /api/posts (发布新帖)
 		if (url.pathname === '/api/posts' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -303,6 +303,134 @@ export default {
 				).bind(title, content, userPayload.id, category_id || 1).run();
 
 				return jsonResponse({ success: true, id: res.meta.last_row_id });
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// GET /api/posts/:id (查看单篇帖子详情 + 浏览量 +1)
+		if (url.pathname.match(/^\/api\/posts\/\d+$/) && method === 'GET') {
+			try {
+				const postId = url.pathname.split('/')[3];
+				await env.cforum_db.prepare('UPDATE posts SET views = COALESCE(views, 0) + 1 WHERE id = ?').bind(postId).run();
+
+				const post = await env.cforum_db.prepare(`
+					SELECT 
+						p.id, p.author_id, p.title, p.content, p.category_id, p.is_pinned, COALESCE(p.views, 0) as view_count, p.created_at,
+						u.username as author_name, u.avatar_url as author_avatar, u.role as author_role, u.title as author_title,
+						c.name as category_name,
+						(SELECT COUNT(*) FROM comments WHERE post_id = p.id) as comment_count,
+						(SELECT COUNT(*) FROM likes WHERE post_id = p.id) as like_count
+					FROM posts p
+					LEFT JOIN users u ON p.author_id = u.id
+					LEFT JOIN categories c ON p.category_id = c.id
+					WHERE p.id = ?
+				`).bind(postId).first();
+
+				if (!post) return jsonResponse({ error: '帖子不存在' }, 404);
+				return jsonResponse(post);
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// GET /api/posts/:id/comments (获取帖子下的所有回帖评论)
+		if (url.pathname.match(/^\/api\/posts\/\d+\/comments$/) && method === 'GET') {
+			try {
+				const postId = url.pathname.split('/')[3];
+				const comments = await env.cforum_db.prepare(`
+					SELECT 
+						c.id, c.post_id, c.parent_id, c.author_id, c.content, c.created_at,
+						u.username, u.avatar_url, u.role, u.title
+					FROM comments c
+					LEFT JOIN users u ON c.author_id = u.id
+					WHERE c.post_id = ?
+					ORDER BY c.created_at ASC
+				`).bind(postId).all();
+
+				return jsonResponse(comments.results);
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// POST /api/posts/:id/comments (发表评论/回帖)
+		if (url.pathname.match(/^\/api\/posts\/\d+\/comments$/) && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				const postId = url.pathname.split('/')[3];
+				const body = await request.json() as any;
+				const content = String(body.content || '').trim();
+				const parentId = body.parent_id || null;
+
+				if (!content) return jsonResponse({ error: '评论内容不能为空' }, 400);
+
+				const res = await env.cforum_db.prepare(
+					'INSERT INTO comments (post_id, author_id, parent_id, content) VALUES (?, ?, ?, ?)'
+				).bind(postId, userPayload.id, parentId, content).run();
+
+				return jsonResponse({ success: true, id: res.meta.last_row_id });
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// POST /api/posts/:id/like (点赞/取消点赞)
+		if (url.pathname.match(/^\/api\/posts\/\d+\/like$/) && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				const postId = url.pathname.split('/')[3];
+
+				const existing = await env.cforum_db.prepare(
+					'SELECT id FROM likes WHERE post_id = ? AND user_id = ?'
+				).bind(postId, userPayload.id).first();
+
+				if (existing) {
+					await env.cforum_db.prepare('DELETE FROM likes WHERE post_id = ? AND user_id = ?').bind(postId, userPayload.id).run();
+					return jsonResponse({ liked: false });
+				} else {
+					await env.cforum_db.prepare('INSERT INTO likes (post_id, user_id) VALUES (?, ?)').bind(postId, userPayload.id).run();
+					return jsonResponse({ liked: true });
+				}
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// POST /api/posts/:id/pin (站长置顶/取消置顶帖子)
+		if (url.pathname.match(/^\/api\/posts\/\d+\/pin$/) && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
+				const postId = url.pathname.split('/')[3];
+
+				await env.cforum_db.prepare(
+					'UPDATE posts SET is_pinned = CASE WHEN is_pinned = 1 THEN 0 ELSE 1 END WHERE id = ?'
+				).bind(postId).run();
+
+				return jsonResponse({ success: true });
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// DELETE /api/posts/:id (删除帖子)
+		if (url.pathname.match(/^\/api\/posts\/\d+$/) && method === 'DELETE') {
+			try {
+				const userPayload = await authenticate(request);
+				const postId = url.pathname.split('/')[3];
+
+				const post = await env.cforum_db.prepare('SELECT author_id FROM posts WHERE id = ?').bind(postId).first<{ author_id: number }>();
+				if (!post) return jsonResponse({ error: '帖子不存在' }, 404);
+				if (userPayload.role !== 'admin' && post.author_id !== userPayload.id) {
+					return jsonResponse({ error: '无权删除他人帖子' }, 403);
+				}
+
+				await env.cforum_db.prepare('DELETE FROM comments WHERE post_id = ?').bind(postId).run();
+				await env.cforum_db.prepare('DELETE FROM likes WHERE post_id = ?').bind(postId).run();
+				await env.cforum_db.prepare('DELETE FROM posts WHERE id = ?').bind(postId).run();
+
+				return jsonResponse({ success: true });
 			} catch (e) {
 				return handleError(e);
 			}
