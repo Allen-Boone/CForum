@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Image as ImageIcon, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Heart } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Image as ImageIcon, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,9 +50,10 @@ function CuteCircleAvatar({ name, avatarUrl, index }: { name: string; avatarUrl?
 	);
 }
 
-// 专属温情时钟与 24 小时动态问候组件
+// 昼夜自适应色彩 + 紧凑式温情时钟组件
 function TimeGreetingBanner() {
 	const [timeText, setTimeText] = React.useState('');
+	const [isNight, setIsNight] = React.useState(false);
 	const [greeting, setGreeting] = React.useState({ icon: '✨', text: '', tag: '问候' });
 
 	React.useEffect(() => {
@@ -69,7 +70,10 @@ function TimeGreetingBanner() {
 
 			setTimeText(`${year}年${month}月${day}日 ${weekDay} ${String(hours).padStart(2, '0')}:${minutes}:${seconds}`);
 
-			// 根据当前小时智能分段问候
+			// 判定是否夜晚（19:00 - 05:59 为夜间模式）
+			const nightTime = hours >= 19 || hours < 6;
+			setIsNight(nightTime);
+
 			if (hours >= 0 && hours < 6) {
 				setGreeting({
 					icon: '🌙',
@@ -115,20 +119,37 @@ function TimeGreetingBanner() {
 	}, []);
 
 	return (
-		<div className="mb-4 rounded-lg border border-[#30363d] bg-[#161b22] px-3.5 py-2.5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-			{/* 左侧：实时时间 */}
-			<div className="flex items-center gap-2 text-xs font-medium text-gray-300">
-				<Clock className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-				<span className="font-mono tracking-wide text-gray-200">{timeText}</span>
+		<div
+			className={`mb-4 rounded-lg px-3.5 py-2.5 shadow-md transition-all flex flex-wrap items-center gap-3 text-xs ${
+				isNight
+					? 'bg-[#131722] border border-purple-500/30'
+					: 'bg-[#161b22] border border-sky-500/30'
+			}`}
+		>
+			{/* 紧凑左侧：时钟图标 + 醒目时间（白天电光蓝，夜晚极光紫） */}
+			<div className="flex items-center gap-1.5 flex-shrink-0">
+				<Clock className={`w-3.5 h-3.5 ${isNight ? 'text-purple-400' : 'text-sky-400'}`} />
+				<span className={`font-mono font-bold tracking-wide ${isNight ? 'text-[#c084fc]' : 'text-[#38bdf8]'}`}>
+					{timeText}
+				</span>
 			</div>
 
-			{/* 右侧：动态温情问候语 */}
-			<div className="flex items-center gap-2 text-xs">
-				<span className="inline-flex items-center gap-1 rounded bg-blue-500/10 px-1.5 py-0.5 font-bold text-blue-400 border border-blue-500/20 text-[11px] flex-shrink-0">
+			{/* 中间小巧的分隔竖线 */}
+			<span className="hidden sm:inline-block text-gray-600 select-none">|</span>
+
+			{/* 紧凑右侧：昼夜专属标签 + 动态问候语 */}
+			<div className="flex items-center gap-2 flex-wrap">
+				<span
+					className={`inline-flex items-center gap-1 rounded px-2 py-0.5 font-bold text-[11px] shadow-sm select-none ${
+						isNight
+							? 'bg-purple-500/20 text-[#e9d5ff] border border-purple-500/40'
+							: 'bg-amber-500/20 text-[#fde047] border border-amber-500/40'
+					}`}
+				>
 					<span>{greeting.icon}</span>
 					<span>{greeting.tag}</span>
 				</span>
-				<span className="text-gray-300 leading-tight">
+				<span className={`leading-tight font-medium ${isNight ? 'text-[#f1f5f9]' : 'text-[#f8fafc]'}`}>
 					{greeting.text}
 				</span>
 			</div>
@@ -394,7 +415,7 @@ export function IndexPage() {
 				))}
 			</div>
 
-			{/* 新增：实时年月日时钟 + 24小时动态温情问候条 */}
+			{/* 全新紧凑排版 + 昼夜自适应色彩问候条 */}
 			<TimeGreetingBanner />
 
 			<div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
