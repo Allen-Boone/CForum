@@ -79,7 +79,6 @@ export default {
 			return jsonResponse({ error: errString }, 500);
 		};
 
-		// 自动确保精华徽章字段与打赏积分字段存在（免去手动敲 SQL）
 		const ensurePostColumns = async () => {
 			await env.cforum_db.prepare('ALTER TABLE posts ADD COLUMN badge TEXT').run().catch(() => {});
 			await env.cforum_db.prepare('ALTER TABLE posts ADD COLUMN reward_points INTEGER DEFAULT 0').run().catch(() => {});
@@ -94,6 +93,27 @@ export default {
 					turnstile_site_key: '',
 					user_count: userCount ? (userCount as any).count : 0,
 					jwt_secret_configured: true
+				});
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// GET /api/community-stats (首页右下角：站点统计 + 最新注册用户 + 在线用户墙)
+		if (url.pathname === '/api/community-stats' && method === 'GET') {
+			try {
+				const [userCount, postCount, commentCount, latestUsers] = await Promise.all([
+					env.cforum_db.prepare('SELECT COUNT(*) as count FROM users').first<number>('count'),
+					env.cforum_db.prepare('SELECT COUNT(*) as count FROM posts').first<number>('count'),
+					env.cforum_db.prepare('SELECT COUNT(*) as count FROM comments').first<number>('count'),
+					env.cforum_db.prepare('SELECT id, username, avatar_url, role, title FROM users ORDER BY id DESC LIMIT 16').all()
+				]);
+
+				return jsonResponse({
+					topics: postCount || 0,
+					replies: commentCount || 0,
+					users: userCount || 0,
+					latest_users: latestUsers.results || []
 				});
 			} catch (e) {
 				return handleError(e);
@@ -261,7 +281,7 @@ export default {
 			}
 		}
 
-		// GET /api/posts (包含精华 badge 与获赏积分 reward_points)
+		// GET /api/posts
 		if (url.pathname === '/api/posts' && method === 'GET') {
 			try {
 				await ensurePostColumns();
@@ -317,7 +337,7 @@ export default {
 			}
 		}
 
-		// POST /api/posts/:id/badge (站长核心神权：设置精华/推荐/神帖/原创 + 自动给作者发放积分奖励！)
+		// POST /api/posts/:id/badge
 		if (url.pathname.match(/^\/api\/posts\/\d+\/badge$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -326,7 +346,7 @@ export default {
 				await ensurePostColumns();
 				const postId = url.pathname.split('/')[3];
 				const body = await request.json() as any;
-				const badge = body.badge || null; // '精华' | '推荐' | '神帖' | '原创' | null
+				const badge = body.badge || null;
 				const bonus = parseInt(body.bonus || '0');
 
 				const post = await env.cforum_db.prepare('SELECT author_id, reward_points FROM posts WHERE id = ?').bind(postId).first<{ author_id: number; reward_points: number }>();
@@ -338,7 +358,6 @@ export default {
 					'UPDATE posts SET badge = ?, reward_points = ? WHERE id = ?'
 				).bind(badge, badge ? newRewardTotal : 0, postId).run();
 
-				// 如果有奖励积分，自动打入发帖作者的账户！
 				if (bonus > 0) {
 					await env.cforum_db.prepare(
 						'UPDATE users SET points = COALESCE(points, 0) + ? WHERE id = ?'
