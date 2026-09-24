@@ -2,10 +2,9 @@ import * as React from 'react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { apiFetch, type Category } from '@/lib/api';
+import { apiFetch, getSecurityHeaders, type Category } from '@/lib/api';
 import { getToken, getUser } from '@/lib/auth';
-import { Coins, Plus, RefreshCw, Shield, Trash2, Users } from 'lucide-react';
+import { Coins, RefreshCw, Shield, Users } from 'lucide-react';
 
 export function AdminPage() {
 	const token = getToken();
@@ -19,7 +18,6 @@ export function AdminPage() {
 		Array<{ id: number; email: string; username: string; role: string; verified: number; created_at: string; points?: number; title?: string }>
 	>([]);
 	const [categories, setCategories] = React.useState<Category[]>([]);
-	const [newCategoryName, setNewCategoryName] = React.useState('');
 
 	React.useEffect(() => {
 		if (!token) window.location.href = '/login';
@@ -29,9 +27,14 @@ export function AdminPage() {
 		setLoading(true);
 		setError('');
 		try {
+			// 严格附带管理员 Authorization 令牌，杜绝跨域拦截
 			const [s, u, c] = await Promise.all([
-				apiFetch<{ users: number; posts: number; comments: number }>('/admin/stats'),
-				apiFetch<any[]>('/admin/users'),
+				apiFetch<{ users: number; posts: number; comments: number }>('/admin/stats', {
+					headers: getSecurityHeaders('GET')
+				}),
+				apiFetch<any[]>('/admin/users', {
+					headers: getSecurityHeaders('GET')
+				}),
 				apiFetch<Category[]>('/categories')
 			]);
 			setStats(s);
@@ -48,7 +51,6 @@ export function AdminPage() {
 		refresh();
 	}, [refresh]);
 
-	// 站长专属：充值/扣除积分快捷弹窗
 	async function handleAdjustPoints(userId: number, username: string, currentPoints: number) {
 		const input = prompt(
 			`【站长调分中心】\n用户：${username}\n当前积分：${currentPoints || 0}\n\n请输入要调整的积分数值：\n（输入正数如 100 为充值；输入负数如 -50 为扣除）`,
@@ -64,6 +66,7 @@ export function AdminPage() {
 		try {
 			const res = await apiFetch<{ success: boolean; points: number }>(`/admin/users/${userId}/points`, {
 				method: 'POST',
+				headers: getSecurityHeaders('POST'),
 				body: JSON.stringify({ amount })
 			});
 			if (res.success) {
@@ -73,12 +76,6 @@ export function AdminPage() {
 		} catch (err: any) {
 			alert('调整失败: ' + err.message);
 		}
-	}
-
-	async function handleAddCategory(e: React.FormEvent) {
-		e.preventDefault();
-		if (!newCategoryName.trim()) return;
-		alert('已支持直接在数据库维护或后续拓展');
 	}
 
 	return (
@@ -99,7 +96,7 @@ export function AdminPage() {
 
 				{error && <div className="p-3 bg-red-900/30 border border-red-800 text-red-200 text-xs rounded">{error}</div>}
 
-				{/* 统计数据 */}
+				{/* 统计指标卡 */}
 				<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 					<Card className="bg-[#161b22] border-[#30363d]">
 						<CardHeader className="py-3 px-4">
@@ -127,7 +124,7 @@ export function AdminPage() {
 					</Card>
 				</div>
 
-				{/* 用户管理与积分充值表 */}
+				{/* 会员列表与快捷调分 */}
 				<Card className="bg-[#161b22] border-[#30363d]">
 					<CardHeader className="py-3 px-4 border-b border-[#30363d]">
 						<CardTitle className="text-sm text-white flex items-center gap-1.5">
@@ -168,7 +165,6 @@ export function AdminPage() {
 											</span>
 										</td>
 										<td className="py-3 px-4 text-right">
-											{/* 充值/扣除积分快捷按钮 */}
 											<Button
 												size="sm"
 												onClick={() => handleAdjustPoints(u.id, u.username, u.points ?? 0)}
