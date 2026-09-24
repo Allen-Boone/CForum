@@ -146,6 +146,25 @@ export default {
 			}
 		}
 
+		// POST /api/user/avatar (核心新增：用户自定义更新头像与称号接口！)
+		if (url.pathname === '/api/user/avatar' && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				const body = await request.json() as any;
+
+				if (body.avatar_url !== undefined) {
+					await env.cforum_db.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').bind(body.avatar_url, userPayload.id).run();
+				}
+				if (body.title !== undefined) {
+					await env.cforum_db.prepare('UPDATE users SET title = ? WHERE id = ?').bind(body.title, userPayload.id).run();
+				}
+
+				return jsonResponse({ success: true, avatar_url: body.avatar_url, title: body.title });
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
 		// POST /api/register
 		if (url.pathname === '/api/register' && method === 'POST') {
 			try {
@@ -337,7 +356,7 @@ export default {
 			}
 		}
 
-		// PUT /api/posts/:id (核心补齐：编辑修改帖子标题、正文与分类！)
+		// PUT /api/posts/:id
 		if (url.pathname.match(/^\/api\/posts\/\d+$/) && method === 'PUT') {
 			try {
 				const userPayload = await authenticate(request);
@@ -468,7 +487,7 @@ export default {
 			}
 		}
 
-		// DELETE /api/comments/:id (删除评论)
+		// DELETE /api/comments/:id
 		if (url.pathname.match(/^\/api\/comments\/\d+$/) && method === 'DELETE') {
 			try {
 				const userPayload = await authenticate(request);
@@ -509,7 +528,7 @@ export default {
 			}
 		}
 
-		// POST /api/posts/:id/pin 及 /api/admin/posts/:id/pin (兼容首页与详情页置顶)
+		// POST /api/posts/:id/pin 及 /api/admin/posts/:id/pin
 		if ((url.pathname.match(/^\/api\/posts\/\d+\/pin$/) || url.pathname.match(/^\/api\/admin\/posts\/\d+\/pin$/)) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -527,7 +546,7 @@ export default {
 			}
 		}
 
-		// POST /api/admin/posts/:id/move (详情页移动帖子板块)
+		// POST /api/admin/posts/:id/move
 		if (url.pathname.match(/^\/api\/admin\/posts\/\d+\/move$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -542,7 +561,7 @@ export default {
 			}
 		}
 
-		// DELETE /api/posts/:id 及 /api/admin/posts/:id (兼容首页与详情页删帖)
+		// DELETE /api/posts/:id 及 /api/admin/posts/:id
 		if ((url.pathname.match(/^\/api\/posts\/\d+$/) || url.pathname.match(/^\/api\/admin\/posts\/\d+$/)) && method === 'DELETE') {
 			try {
 				const userPayload = await authenticate(request);
