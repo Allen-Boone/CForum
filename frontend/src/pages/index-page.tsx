@@ -50,10 +50,11 @@ function CuteCircleAvatar({ name, avatarUrl, index }: { name: string; avatarUrl?
 	);
 }
 
+// 昼夜温情时钟（夜晚全线升级为护眼清晰暖金色）
 function TimeGreetingBanner() {
 	const [timeText, setTimeText] = React.useState('');
 	const [isNight, setIsNight] = React.useState(false);
-	const [hour, setHour] = React.useState(18);
+	const [hour, setHour] = React.useState(19);
 
 	React.useEffect(() => {
 		function update() {
@@ -80,38 +81,38 @@ function TimeGreetingBanner() {
 	function renderGreetingContent() {
 		if (hour >= 0 && hour < 6) {
 			return (
-				<span className="leading-tight text-gray-200">
-					夜深了，极客们也要 <strong className="text-purple-300 font-bold">早点休息 🌙</strong>，熬夜最伤身，<strong className="text-pink-400 font-bold">代码与搞钱</strong> 的事留给明天吧！
+				<span className="leading-tight text-gray-100">
+					夜深了，极客们也要 <strong className="text-yellow-300 font-bold underline decoration-yellow-400/50 underline-offset-2">早点休息 🌙</strong>，熬夜最伤身，<strong className="text-amber-400 font-bold">代码与搞钱</strong> 的事留给明天吧！
 				</span>
 			);
 		} else if (hour >= 6 && hour < 9) {
 			return (
-				<span className="leading-tight text-gray-200">
+				<span className="leading-tight text-gray-100">
 					清晨好！新的一天充满无限可能，来自由论坛开启 <strong className="text-emerald-400 font-bold">元气满满 🌅</strong> 的 <strong className="text-amber-400 font-bold">搞钱日常</strong> 吧！
 				</span>
 			);
 		} else if (hour >= 9 && hour < 12) {
 			return (
-				<span className="leading-tight text-gray-200">
+				<span className="leading-tight text-gray-100">
 					上午好！忙碌折腾之余，记得 <strong className="text-cyan-300 font-bold">喝口温水 🥛</strong>、伸个懒腰，生活不止代码与屏幕。
 				</span>
 			);
 		} else if (hour >= 12 && hour < 14) {
 			return (
-				<span className="leading-tight text-gray-200">
-					干饭时间到！<strong className="text-orange-400 font-bold">🍱 吃饱睡个小午觉</strong>，养足精神，下午思路才会更敏捷。
+				<span className="leading-tight text-gray-100">
+					干饭时间到！<strong className="text-amber-400 font-bold">🍱 吃饱睡个小午觉</strong>，养足精神，下午思路才会更敏捷。
 				</span>
 			);
 		} else if (hour >= 14 && hour < 19) {
 			return (
-				<span className="leading-tight text-gray-200">
-					下午好！来杯 <strong className="text-amber-400 font-bold">☕ 咖啡</strong> 提提神，去 <strong className="text-yellow-400 font-bold underline decoration-yellow-500/60 underline-offset-2">【茶水间】</strong> 摸鱼吹水，劳逸结合效率更高！
+				<span className="leading-tight text-gray-100">
+					下午好！来杯 <strong className="text-amber-400 font-bold">☕ 咖啡</strong> 提提神，去 <strong className="text-yellow-300 font-bold underline decoration-yellow-400/60 underline-offset-2">【茶水间】</strong> 摸鱼吹水，劳逸结合效率更高！
 				</span>
 			);
 		} else {
 			return (
-				<span className="leading-tight text-gray-200">
-					晚上好！卸下一天的疲惫，自由论坛是属于你的 <strong className="text-sky-400 font-bold">数字避风港 ⛵</strong>，静心交流吧。
+				<span className="leading-tight text-gray-100">
+					晚上好！卸下一天的疲惫，自由论坛是属于你的 <strong className="text-yellow-300 font-bold underline decoration-yellow-400/60 underline-offset-2">数字避风港 ⛵</strong>，静心交流吧。
 				</span>
 			);
 		}
@@ -132,22 +133,26 @@ function TimeGreetingBanner() {
 		<div
 			className={`mb-4 rounded-lg px-3.5 py-2.5 shadow-md transition-all flex flex-wrap items-center gap-3 text-xs ${
 				isNight
-					? 'bg-[#121622] border border-purple-500/40 shadow-purple-950/20'
+					? 'bg-[#161b22] border border-amber-500/40 shadow-amber-950/20'
 					: 'bg-[#161b22] border border-sky-500/40 shadow-sky-950/20'
 			}`}
 		>
+			{/* 时间部分：白天电光蓝，夜晚换成超级清晰护眼的明亮暖金黄！ */}
 			<div className="flex items-center gap-1.5 flex-shrink-0">
-				<Clock className={`w-3.5 h-3.5 ${isNight ? 'text-purple-400 animate-pulse' : 'text-sky-400'}`} />
-				<span className={`font-mono font-bold tracking-wide text-[13px] ${isNight ? 'text-[#c084fc]' : 'text-[#38bdf8]'}`}>
+				<Clock className={`w-3.5 h-3.5 ${isNight ? 'text-amber-400' : 'text-sky-400'}`} />
+				<span className={`font-mono font-bold tracking-wide text-[13px] ${isNight ? 'text-[#facc15]' : 'text-[#38bdf8]'}`}>
 					{timeText}
 				</span>
 			</div>
+
 			<span className="hidden sm:inline-block text-gray-600 select-none">|</span>
+
+			{/* 标签与问候语：夜晚纯金高亮，一目了然 */}
 			<div className="flex items-center gap-2 flex-wrap">
 				<span
 					className={`inline-flex items-center gap-1 rounded px-2 py-0.5 font-bold text-[11px] shadow-sm select-none ${
 						isNight
-							? 'bg-purple-500/20 text-[#e9d5ff] border border-purple-500/50'
+							? 'bg-amber-500/20 text-[#fde047] border border-amber-500/50'
 							: 'bg-amber-500/20 text-[#fde047] border border-amber-500/50'
 					}`}
 				>
@@ -272,7 +277,6 @@ export function IndexPage() {
 		}
 	}
 
-	// 核心通用文件上传函数（支持粘贴的图片和手动选择的附件）
 	async function uploadSingleFile(file: File) {
 		setUploading(true);
 		setUploadNotice('正在秒传文件至云端...');
@@ -304,7 +308,6 @@ export function IndexPage() {
 		}
 	}
 
-	// 监听键盘直接按 Ctrl + V 粘贴截图！
 	function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
 		const items = e.clipboardData?.items;
 		if (!items) return;
@@ -320,13 +323,10 @@ export function IndexPage() {
 		}
 	}
 
-	// 监听拖拽桌面图片进输入框！
 	function handleDrop(e: React.DragEvent<HTMLTextAreaElement>) {
 		e.preventDefault();
 		const files = e.dataTransfer?.files;
-		if (files && files.length > 0) {
-			uploadSingleFile(files[0]);
-		}
+		if (files && files.length > 0) uploadSingleFile(files[0]);
 	}
 
 	function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -474,7 +474,6 @@ export function IndexPage() {
 								<Input placeholder="标题：请用一句话说清你的主题" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="bg-[#0d1117] border-[#30363d] text-white text-sm" />
 							</div>
 
-							{/* 核心神技：支持剪贴板 Ctrl+V 直接粘贴截图，支持把桌面图片直接拖进框里！ */}
 							<div className="relative">
 								<textarea
 									ref={textareaRef}
