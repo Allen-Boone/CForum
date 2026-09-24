@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Image as ImageIcon, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,7 +50,6 @@ function CuteCircleAvatar({ name, avatarUrl, index }: { name: string; avatarUrl?
 	);
 }
 
-// 昼夜自适应色彩 + 重点词独立高亮温情时钟
 function TimeGreetingBanner() {
 	const [timeText, setTimeText] = React.useState('');
 	const [isNight, setIsNight] = React.useState(false);
@@ -78,7 +77,6 @@ function TimeGreetingBanner() {
 		return () => clearInterval(timer);
 	}, []);
 
-	// 重点词精准高亮渲染
 	function renderGreetingContent() {
 		if (hour >= 0 && hour < 6) {
 			return (
@@ -138,17 +136,13 @@ function TimeGreetingBanner() {
 					: 'bg-[#161b22] border border-sky-500/40 shadow-sky-950/20'
 			}`}
 		>
-			{/* 时间部分：白天电光蓝、夜晚赛博极光紫 */}
 			<div className="flex items-center gap-1.5 flex-shrink-0">
 				<Clock className={`w-3.5 h-3.5 ${isNight ? 'text-purple-400 animate-pulse' : 'text-sky-400'}`} />
 				<span className={`font-mono font-bold tracking-wide text-[13px] ${isNight ? 'text-[#c084fc]' : 'text-[#38bdf8]'}`}>
 					{timeText}
 				</span>
 			</div>
-
 			<span className="hidden sm:inline-block text-gray-600 select-none">|</span>
-
-			{/* 问候语部分：带不同颜色的重点词渲染 */}
 			<div className="flex items-center gap-2 flex-wrap">
 				<span
 					className={`inline-flex items-center gap-1 rounded px-2 py-0.5 font-bold text-[11px] shadow-sm select-none ${
@@ -188,7 +182,9 @@ export function IndexPage() {
 	});
 	const [checkedIn, setCheckedIn] = React.useState<boolean>(() => Boolean((user as any)?.checked_in_today));
 	const [uploading, setUploading] = React.useState<boolean>(false);
+	const [uploadNotice, setUploadNotice] = React.useState<string>('');
 	const fileInputRef = React.useRef<HTMLInputElement>(null);
+	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
 	const [commStats, setCommStats] = React.useState<{
 		topics: number;
@@ -276,10 +272,10 @@ export function IndexPage() {
 		}
 	}
 
-	async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
-		const file = e.target.files?.[0];
-		if (!file) return;
+	// 核心通用文件上传函数（支持粘贴的图片和手动选择的附件）
+	async function uploadSingleFile(file: File) {
 		setUploading(true);
+		setUploadNotice('正在秒传文件至云端...');
 		try {
 			const formData = new FormData();
 			formData.append('file', file);
@@ -290,8 +286,14 @@ export function IndexPage() {
 			});
 			const data = await res.json() as any;
 			if (data.url) {
-				setNewContent(prev => prev + `\n\n![图片](${data.url})\n`);
-				alert('图片上传成功！已自动插入到正文中');
+				const isImg = file.type.startsWith('image/');
+				const markdownInsert = isImg
+					? `\n\n![${file.name || '图片'}](${data.url})\n\n`
+					: `\n\n📎 [下载附件: ${file.name || '文件'}](${data.url})\n\n`;
+
+				setNewContent(prev => prev + markdownInsert);
+				setUploadNotice(isImg ? '✅ 截图已自动粘贴成功！' : '✅ 附件上传成功！');
+				setTimeout(() => setUploadNotice(''), 3000);
 			} else {
 				alert('上传失败：' + (data.error || '未知错误'));
 			}
@@ -300,6 +302,36 @@ export function IndexPage() {
 		} finally {
 			setUploading(false);
 		}
+	}
+
+	// 监听键盘直接按 Ctrl + V 粘贴截图！
+	function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+		const items = e.clipboardData?.items;
+		if (!items) return;
+		for (let i = 0; i < items.length; i++) {
+			if (items[i].type.indexOf('image') !== -1) {
+				const file = items[i].getAsFile();
+				if (file) {
+					e.preventDefault();
+					uploadSingleFile(file);
+					return;
+				}
+			}
+		}
+	}
+
+	// 监听拖拽桌面图片进输入框！
+	function handleDrop(e: React.DragEvent<HTMLTextAreaElement>) {
+		e.preventDefault();
+		const files = e.dataTransfer?.files;
+		if (files && files.length > 0) {
+			uploadSingleFile(files[0]);
+		}
+	}
+
+	function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+		const file = e.target.files?.[0];
+		if (file) uploadSingleFile(file);
 	}
 
 	async function handleCreatePost(e: React.FormEvent) {
@@ -413,7 +445,6 @@ export function IndexPage() {
 				))}
 			</div>
 
-			{/* 重点词独立高亮温情横幅 */}
 			<TimeGreetingBanner />
 
 			<div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -442,13 +473,35 @@ export function IndexPage() {
 								</select>
 								<Input placeholder="标题：请用一句话说清你的主题" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="bg-[#0d1117] border-[#30363d] text-white text-sm" />
 							</div>
-							<textarea rows={6} placeholder="正文内容（支持 Markdown 语法）..." value={newContent} onChange={e => setNewContent(e.target.value)} className="w-full bg-[#0d1117] border border-[#30363d] text-white text-sm rounded-md p-2.5 outline-none" />
+
+							{/* 核心神技：支持剪贴板 Ctrl+V 直接粘贴截图，支持把桌面图片直接拖进框里！ */}
+							<div className="relative">
+								<textarea
+									ref={textareaRef}
+									rows={7}
+									onPaste={handlePaste}
+									onDrop={handleDrop}
+									placeholder="正文内容（支持截图直接 Ctrl+V 粘贴、拖拽图片进框、支持 Markdown 语法）..."
+									value={newContent}
+									onChange={e => setNewContent(e.target.value)}
+									className="w-full bg-[#0d1117] border border-[#30363d] text-white text-sm rounded-md p-3 outline-none focus:border-blue-500 leading-relaxed font-sans"
+								/>
+								{uploadNotice && (
+									<div className="absolute bottom-3 right-3 text-xs bg-emerald-950/80 text-emerald-300 border border-emerald-700 px-2.5 py-1 rounded shadow-lg animate-pulse">
+										{uploadNotice}
+									</div>
+								)}
+							</div>
+
 							<div className="flex items-center justify-between pt-1 flex-wrap gap-2">
 								<div className="flex items-center gap-3">
-									<input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
+									<input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
 									<Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="border-[#30363d] text-gray-300 text-xs h-7">
-										<ImageIcon className="w-3.5 h-3.5 mr-1" /> {uploading ? '上传中...' : '插入图片'}
+										<Paperclip className="w-3.5 h-3.5 mr-1" /> {uploading ? '上传中...' : '📎 上传文件/附件'}
 									</Button>
+									<span className="text-[11px] text-gray-400 hidden sm:inline">
+										💡 提示：截图后直接在正文框按 <strong>Ctrl + V</strong> 即可秒贴图片！
+									</span>
 									{user.role === 'admin' && (
 										<label className="flex items-center gap-1.5 text-xs text-amber-400 cursor-pointer">
 											<input type="checkbox" checked={pinOnCreate} onChange={e => setPinOnCreate(e.target.checked)} /> 📌 直接设为全站置顶帖
