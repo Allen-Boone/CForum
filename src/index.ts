@@ -38,7 +38,7 @@ interface DBUserTotp { totp_secret: string; }
 interface DBCount { count: number; }
 interface DBSetting { value: string; }
 
-// Utility: JSON Response (自带全站跨域允许 CORS)
+// Utility: JSON Response (全站跨域允许 CORS)
 function jsonResponse(data: any, status = 200, headers: Record<string, string> = {}): Response {
     return new Response(JSON.stringify(data), {
         status,
@@ -210,7 +210,7 @@ export default {
 			}
 		}
 
-		// POST /api/login
+		// POST /api/login (核心修复：写入会话表，生成永不过期的有效凭证)
 		if (url.pathname === '/api/login' && method === 'POST') {
 			try {
 				const body = await request.json() as any;
@@ -238,12 +238,17 @@ export default {
 					if (delta === null) return jsonResponse({ error: '双重验证码错误' }, 401);
 				}
 
-				const token = await security.generateToken({
+				// 生成真实带 jti 的令牌
+				const { token, jti, expiresAt } = await security.generateToken({
 					id: user.id,
-					email: user.email,
-					username: user.username,
-					role: user.role || 'user'
+					role: user.role || 'user',
+					email: user.email
 				});
+
+				// 真正写入 sessions 会话表！这是后台权限通过的核心！
+				await env.cforum_db.prepare(
+					'INSERT INTO sessions (jti, user_id, expires_at) VALUES (?, ?, ?)'
+				).bind(jti, user.id, expiresAt).run();
 
 				const today = new Date().toISOString().slice(0, 10);
 
@@ -429,6 +434,7 @@ export default {
 			}
 		}
 
+		// 站长调分接口
 		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/points$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
