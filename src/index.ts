@@ -38,12 +38,15 @@ interface DBUserTotp { totp_secret: string; }
 interface DBCount { count: number; }
 interface DBSetting { value: string; }
 
-// Utility: JSON Response
+// Utility: JSON Response (自带全站跨域允许 CORS)
 function jsonResponse(data: any, status = 200, headers: Record<string, string> = {}): Response {
     return new Response(JSON.stringify(data), {
         status,
         headers: {
             'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Timestamp, X-Nonce',
             ...headers,
         },
     });
@@ -73,6 +76,18 @@ export default {
 		const url = new URL(request.url);
 		const method = request.method;
 
+		// 跨域预检直接放行
+		if (method === 'OPTIONS') {
+			return new Response(null, {
+				status: 204,
+				headers: {
+					'Access-Control-Allow-Origin': '*',
+					'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+					'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Timestamp, X-Nonce',
+				}
+			});
+		}
+
 		// Initialize Security with Worker env
 		const security = new Security(env);
 
@@ -98,19 +113,6 @@ export default {
 			}
 			return jsonResponse({ error: errString }, 500);
 		};
-
-        const publicPaths = [
-            '/api/config', '/api/login', '/api/register', '/api/verify', 
-            '/api/auth/forgot-password', '/api/auth/reset-password', '/api/verify-email-change',
-            '/api/posts', '/api/categories', '/api/users' 
-        ];
-        
-        if (['POST', 'PUT', 'DELETE'].includes(method)) {
-             const validation = await security.validateRequest(request);
-             if (!validation.valid) {
-                 return jsonResponse({ error: validation.error || 'Security check failed' }, 400);
-             }
-        }
 
 		// GET /api/config
 		if (url.pathname === '/api/config' && method === 'GET') {
@@ -161,49 +163,24 @@ export default {
 			}
 		};
 
-		// Helper to check if a string is visually empty
-		const isVisuallyEmpty = (str: string): boolean => {
-			return str.replace(/[\s\u200B-\u200D\uFEFF\u00A0\u3000]/g, '').length === 0;
-		};
-
-		// Helper to check for invalid invisible characters
-		const hasInvisibleCharacters = (str: string): boolean => {
-			const invisibleRegex = /[\u200B-\u200D\uFEFF\u00A0\u3000]/;
-			return invisibleRegex.test(str);
-		};
-
-		// Helper to check for control characters
-		const hasControlCharacters = (str: string): boolean => {
-			const controlRegex = /[\u0000-\u001F\u007F-\u009F]/;
-			return controlRegex.test(str);
-		};
-
-		// Helper to check for restricted keywords in username
+		const isVisuallyEmpty = (str: string): boolean => str.replace(/[\s\u200B-\u200D\uFEFF\u00A0\u3000]/g, '').length === 0;
+		const hasInvisibleCharacters = (str: string): boolean => /[\u200B-\u200D\uFEFF\u00A0\u3000]/.test(str);
+		const hasControlCharacters = (str: string): boolean => /[\u0000-\u001F\u007F-\u009F]/.test(str);
 		const hasRestrictedKeywords = (username: string): boolean => {
-			const restrictedKeywords = [
-				'admin', 'administrator', 'root', 'system', 'sysadmin',
-				'moderator', 'mod', 'support', 'help', 'service',
-				'cforum', 'official', 'staff', 'team', 'master'
-			];
+			const restrictedKeywords = ['admin', 'administrator', 'root', 'system', 'sysadmin', 'moderator', 'mod', 'support', 'help', 'service', 'cforum', 'official', 'staff', 'team', 'master'];
 			const lowerUsername = username.toLowerCase();
 			return restrictedKeywords.some(keyword => lowerUsername.includes(keyword));
 		};
 
-		// POST /api/register (初始积分严格为 0 分，免邮箱验证)
+		// POST /api/register
 		if (url.pathname === '/api/register' && method === 'POST') {
 			try {
 				const body = await request.json() as any;
-
 				const ip = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
-				if (!(await checkTurnstile(body, ip))) {
-					return jsonResponse({ error: 'Turnstile verification failed' }, 403);
-				}
+				if (!(await checkTurnstile(body, ip))) return jsonResponse({ error: 'Turnstile verification failed' }, 403);
 
 				const { email, username, password } = body;
-				if (!email || !username || !password) {
-					return jsonResponse({ error: 'Missing email, username or password' }, 400);
-				}
-
+				if (!email || !username || !password) return jsonResponse({ error: 'Missing email, username or password' }, 400);
 				if (email.length > 50) return jsonResponse({ error: 'Email too long (Max 50 chars)' }, 400);
 				if (username.length > 20) return jsonResponse({ error: 'Username too long (Max 20 chars)' }, 400);
 				if (isVisuallyEmpty(username)) return jsonResponse({ error: 'Username cannot be empty' }, 400);
@@ -221,19 +198,13 @@ export default {
 				const passwordHash = await hashPassword(password);
 				const verificationToken = generateToken();
 
-				// 初始 0 积分与新手称号
 				const { success, meta } = await env.cforum_db.prepare(
 					'INSERT INTO users (email, username, password, role, verified, verification_token, points, title) VALUES (?, ?, ?, ?, 1, ?, 0, ?)'
 				).bind(email, username, passwordHash, 'user', verificationToken, '🌱 初来乍到').run();
 
-				if (!success) {
-					return jsonResponse({ error: 'Registration failed' }, 500);
-				}
+				if (!success) return jsonResponse({ error: 'Registration failed' }, 500);
 
-				return jsonResponse({ 
-					message: '注册成功！请直接登录体验论坛。',
-					userId: meta.last_row_id 
-				}, 201);
+				return jsonResponse({ message: '注册成功！请直接登录体验论坛。', userId: meta.last_row_id }, 201);
 			} catch (e) {
 				return handleError(e);
 			}
@@ -243,51 +214,28 @@ export default {
 		if (url.pathname === '/api/login' && method === 'POST') {
 			try {
 				const body = await request.json() as any;
-
 				const ip = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
-				if (!(await checkTurnstile(body, ip))) {
-					return jsonResponse({ error: 'Turnstile verification failed' }, 403);
-				}
+				if (!(await checkTurnstile(body, ip))) return jsonResponse({ error: 'Turnstile verification failed' }, 403);
 
 				const { email, password, totp_code } = body;
-				if (!email || !password) {
-					return jsonResponse({ error: 'Missing email or password' }, 400);
-				}
+				if (!email || !password) return jsonResponse({ error: 'Missing email or password' }, 400);
 
 				const user = await env.cforum_db.prepare(
 					'SELECT id, username, email, password, verified, role, avatar_url, totp_secret, totp_enabled, points, title, last_checkin_date FROM users WHERE email = ?'
 				).bind(email).first<DBUser>();
 
-				if (!user) {
-					return jsonResponse({ error: 'Username or Password Error' }, 401);
-				}
+				if (!user) return jsonResponse({ error: 'Username or Password Error' }, 401);
 
 				const passwordHash = await hashPassword(password);
-				if (user.password !== passwordHash) {
-					return jsonResponse({ error: 'Username or Password Error' }, 401);
-				}
-
-				if (user.verified !== 1) {
-					return jsonResponse({ error: '请先完成邮箱验证后登录' }, 403);
-				}
+				if (user.password !== passwordHash) return jsonResponse({ error: 'Username or Password Error' }, 401);
+				if (user.verified !== 1) return jsonResponse({ error: '请先完成邮箱验证后登录' }, 403);
 
 				if (user.totp_enabled === 1) {
-					if (!totp_code) {
-						return jsonResponse({ error: 'TOTP_REQUIRED', message: '请输入双重验证码' }, 401);
-					}
-					if (!user.totp_secret) {
-						return jsonResponse({ error: '2FA 配置异常' }, 500);
-					}
-					const totp = new OTPAuth.TOTP({
-						secret: OTPAuth.Secret.fromBase32(user.totp_secret),
-						algorithm: 'SHA1',
-						digits: 6,
-						period: 30,
-					});
+					if (!totp_code) return jsonResponse({ error: 'TOTP_REQUIRED', message: '请输入双重验证码' }, 401);
+					if (!user.totp_secret) return jsonResponse({ error: '2FA 配置异常' }, 500);
+					const totp = new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(user.totp_secret), algorithm: 'SHA1', digits: 6, period: 30 });
 					const delta = totp.validate({ token: totp_code, window: 1 });
-					if (delta === null) {
-						return jsonResponse({ error: '双重验证码错误' }, 401);
-					}
+					if (delta === null) return jsonResponse({ error: '双重验证码错误' }, 401);
 				}
 
 				const token = await security.generateToken({
@@ -317,33 +265,20 @@ export default {
 			}
 		}
 
-		// POST /api/checkin (每日签到：随机奖励 2~10 积分)
+		// POST /api/checkin
 		if (url.pathname === '/api/checkin' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
 				const today = new Date().toISOString().slice(0, 10);
 
-				const user = await env.cforum_db.prepare(
-					'SELECT points, last_checkin_date FROM users WHERE id = ?'
-				).bind(userPayload.id).first<DBUser>();
-
-				if (user?.last_checkin_date === today) {
-					return jsonResponse({ error: '今日已经签过到了，明天再来吧！' }, 400);
-				}
+				const user = await env.cforum_db.prepare('SELECT points, last_checkin_date FROM users WHERE id = ?').bind(userPayload.id).first<DBUser>();
+				if (user?.last_checkin_date === today) return jsonResponse({ error: '今日已经签过到了，明天再来吧！' }, 400);
 
 				const reward = Math.floor(Math.random() * 9) + 2; 
-
-				await env.cforum_db.prepare(
-					'UPDATE users SET points = COALESCE(points, 0) + ?, last_checkin_date = ? WHERE id = ?'
-				).bind(reward, today, userPayload.id).run();
-
+				await env.cforum_db.prepare('UPDATE users SET points = COALESCE(points, 0) + ?, last_checkin_date = ? WHERE id = ?').bind(reward, today, userPayload.id).run();
 				const newPoints = (user?.points ?? 0) + reward;
 
-				return jsonResponse({
-					success: true,
-					reward,
-					points: newPoints
-				});
+				return jsonResponse({ success: true, reward, points: newPoints });
 			} catch (e) {
 				return handleError(e);
 			}
@@ -352,9 +287,7 @@ export default {
 		// GET /api/categories
 		if (url.pathname === '/api/categories' && method === 'GET') {
 			try {
-				const categories = await env.cforum_db.prepare(
-					'SELECT id, name, created_at FROM categories ORDER BY id ASC'
-				).all();
+				const categories = await env.cforum_db.prepare('SELECT id, name, created_at FROM categories ORDER BY id ASC').all();
 				return jsonResponse(categories.results);
 			} catch (e) {
 				return handleError(e);
@@ -399,10 +332,7 @@ export default {
 				}
 				const total = await env.cforum_db.prepare(countQuery).bind(...countParams).first<number>('count');
 
-				return jsonResponse({
-					items: posts.results,
-					total: total || 0
-				});
+				return jsonResponse({ items: posts.results, total: total || 0 });
 			} catch (e) {
 				return handleError(e);
 			}
@@ -414,10 +344,7 @@ export default {
 				const userPayload = await authenticate(request);
 				const body = await request.json() as any;
 				const { title, content, category_id } = body;
-
-				if (!title || !content) {
-					return jsonResponse({ error: '标题与内容不能为空' }, 400);
-				}
+				if (!title || !content) return jsonResponse({ error: '标题与内容不能为空' }, 400);
 
 				const res = await env.cforum_db.prepare(
 					'INSERT INTO posts (title, content, author_id, category_id) VALUES (?, ?, ?, ?)'
@@ -429,16 +356,13 @@ export default {
 			}
 		}
 
-		// POST /api/upload (R2 图片上传)
+		// POST /api/upload
 		if (url.pathname === '/api/upload' && method === 'POST') {
 			try {
 				await authenticate(request);
 				const formData = await request.formData();
 				const file = formData.get('file') as File;
-
-				if (!file) {
-					return jsonResponse({ error: '请选择要上传的图片' }, 400);
-				}
+				if (!file) return jsonResponse({ error: '请选择要上传的图片' }, 400);
 
 				const ext = file.name.split('.').pop() || 'png';
 				const key = `uploads/${Date.now()}-${crypto.randomUUID()}.${ext}`;
@@ -454,7 +378,7 @@ export default {
 			}
 		}
 
-		// GET /r2/* (直接输出 R2 图片)
+		// GET /r2/*
 		if (url.pathname.startsWith('/r2/')) {
 			const key = url.pathname.replace('/r2/', '');
 			const object = await (env as any).BUCKET.get(key);
@@ -464,6 +388,7 @@ export default {
 			object.writeHttpMetadata(headers);
 			headers.set('etag', object.httpEtag);
 			headers.set('Cache-Control', 'public, max-age=31536000');
+			headers.set('Access-Control-Allow-Origin', '*');
 
 			return new Response(object.body, { headers });
 		}
@@ -504,7 +429,6 @@ export default {
 			}
 		}
 
-		// POST /api/admin/users/:id/points (站长专享：充值/扣除积分接口)
 		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/points$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -514,9 +438,7 @@ export default {
 				const body = await request.json() as any;
 				const amount = parseInt(body.amount);
 
-				if (isNaN(amount)) {
-					return jsonResponse({ error: '请输入有效的整数数值' }, 400);
-				}
+				if (isNaN(amount)) return jsonResponse({ error: '请输入有效的整数数值' }, 400);
 
 				await env.cforum_db.prepare(
 					'UPDATE users SET points = MAX(0, COALESCE(points, 0) + ?) WHERE id = ?'
@@ -539,15 +461,16 @@ export default {
 
 				const settings = await env.cforum_db.prepare('SELECT key, value FROM settings').all();
 				const result: Record<string, string> = {};
-				settings.results.forEach((row: any) => {
-					result[row.key] = row.value;
-				});
+				settings.results.forEach((row: any) => { result[row.key] = row.value; });
 				return jsonResponse(result);
 			} catch (e) {
 				return handleError(e);
 			}
 		}
 
-		return new Response('Not Found', { status: 404 });
+		return new Response('Not Found', { 
+			status: 404,
+			headers: { 'Access-Control-Allow-Origin': '*' }
+		});
 	}
 };
