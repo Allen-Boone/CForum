@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { getUser, logout, type User } from '@/lib/auth';
 import { getTheme, toggleTheme, type Theme } from '@/lib/theme';
-import { Moon, Settings, Shield, Sun, LogIn, UserPlus, LogOut, Search, PlusCircle } from 'lucide-react';
+import { Moon, Settings, Shield, Sun, LogIn, UserPlus, LogOut } from 'lucide-react';
 
 export function SiteHeader({
 	currentUser,
@@ -26,39 +26,24 @@ export function SiteHeader({
 
 	return (
 		<header className="w-full border-b border-[#22272e] bg-[#0d1117] text-white sticky top-0 z-50">
-			{/* 第一行：主LOGO、快捷板块导航、全局搜索、用户状态 */}
-			<div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-2.5">
-				{/* LOGO 与 网站名 */}
-				<div className="flex items-center gap-6">
-					<a href="/" className="flex items-center gap-2 group">
-						<div className="w-8 h-8 rounded-lg bg-[#003580] flex items-center justify-center p-1 shadow-sm">
-							<svg viewBox="0 0 100 100" className="w-6 h-6 fill-white">
-								<path d="M50 42 C40 22 28 16 12 18 C20 32 30 40 45 46 Z"/>
-								<path d="M50 42 C60 22 72 16 88 18 C80 32 70 40 55 46 Z"/>
-								<path d="M30 44 C20 44 20 62 38 72 C42 74 44 78 44 82 C46 78 52 74 60 70 C78 60 80 44 68 44 C64 44 62 48 60 52 C56 50 44 50 40 52 C38 48 36 44 30 44 Z"/>
-								<circle cx="50" cy="58" r="6"/>
-							</svg>
-						</div>
-						<div className="flex flex-col">
-							<span className="text-lg font-black tracking-wider text-white group-hover:text-blue-400 transition-colors">自由论坛</span>
-						</div>
-					</a>
+			{/* 顶栏极致留白：左侧品牌Logo，右侧管理与用户，告别重复与拥挤 */}
+			<div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
+				{/* 左侧 LOGO 与 网站名 */}
+				<a href="/" className="flex items-center gap-2.5 group">
+					<div className="w-8 h-8 rounded-lg bg-[#003580] flex items-center justify-center p-1 shadow-sm">
+						<svg viewBox="0 0 100 100" className="w-6 h-6 fill-white">
+							<path d="M50 42 C40 22 28 16 12 18 C20 32 30 40 45 46 Z"/>
+							<path d="M50 42 C60 22 72 16 88 18 C80 32 70 40 55 46 Z"/>
+							<path d="M30 44 C20 44 20 62 38 72 C42 74 44 78 44 82 C46 78 52 74 60 70 C78 60 80 44 68 44 C64 44 62 48 60 52 C56 50 44 50 40 52 C38 48 36 44 30 44 Z"/>
+							<circle cx="50" cy="58" r="6"/>
+						</svg>
+					</div>
+					<span className="text-lg font-black tracking-wider text-white group-hover:text-blue-400 transition-colors">
+						自由论坛
+					</span>
+				</a>
 
-					{/* 仿 lao1 顶栏快捷横向链接 */}
-					<nav className="hidden lg:flex items-center gap-5 text-sm font-medium text-gray-300">
-						<a href="/?cat=all" className="hover:text-white transition-colors">全部</a>
-						<a href="/?cat=ai" className="hover:text-white transition-colors">AI聊聊</a>
-						<a href="/?cat=chat" className="hover:text-white transition-colors">茶水间</a>
-						<a href="/?cat=qa" className="hover:text-white transition-colors">问与答</a>
-						<a href="/?cat=tech" className="hover:text-white transition-colors">技术贴</a>
-						<a href="/?cat=side" className="hover:text-white transition-colors">副业来了</a>
-						<a href="/?cat=domain" className="hover:text-white transition-colors">域名交流</a>
-						<a href="/?cat=welfare" className="hover:text-white transition-colors">福利发放</a>
-						<a href="/?cat=webmaster" className="hover:text-white transition-colors">站长交流</a>
-					</nav>
-				</div>
-
-				{/* 右侧搜索与用户区域 */}
+				{/* 右侧：主题切换与用户操作区 */}
 				<div className="flex items-center gap-3">
 					<Button type="button" variant="ghost" size="sm" onClick={toggleTheme} className="text-gray-400 hover:text-white">
 						{theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
