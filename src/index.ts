@@ -502,7 +502,7 @@ export default {
 		}
 
 		/*
-		 * 发送邮箱验证码（正式启用自主域名 mail.t20.de5.net 发信！）
+		 * 发送邮箱验证码（完美对齐已通过官方认证的域名 mail.t20.de5.net！）
 		 */
 		if (
 			url.pathname === '/api/auth/send-code' &&
@@ -624,7 +624,7 @@ export default {
 	</div>
 </div>`;
 
-				// 使用已通过认证的独立域名自主发信！
+				// 100% 匹配你在 Resend 验证通过的完整域名：mail.t20.de5.net！
 				const resendResponse = await fetch(
 					'https://api.resend.com/emails',
 					{
@@ -784,18 +784,7 @@ export default {
 						.prepare(
 							'SELECT COUNT(*) AS count FROM comments'
 						)
-						.first<{ count: number }>(),
-					db
-						.prepare(`
-							SELECT id, username, avatar_url,
-							       role, title, badges
-							FROM users
-							WHERE username != '已注销用户'
-							  AND role != 'banned'
-							ORDER BY id DESC
-							LIMIT 16
-						`)
-						.all()
+						.first<{ count: number }>()
 				]);
 
 				return jsonResponse({
