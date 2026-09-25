@@ -141,6 +141,7 @@ Sitemap: https://blog.t20.de5.net/sitemap.xml
 			await env.cforum_db.prepare('ALTER TABLE posts ADD COLUMN badge TEXT').run().catch(() => {});
 			await env.cforum_db.prepare('ALTER TABLE posts ADD COLUMN reward_points INTEGER DEFAULT 0').run().catch(() => {});
 			await env.cforum_db.prepare("ALTER TABLE users ADD COLUMN badges TEXT DEFAULT '[]'").run().catch(() => {});
+			await env.cforum_db.prepare("ALTER TABLE categories ADD COLUMN sort_order INTEGER DEFAULT 0").run().catch(() => {});
 			await env.cforum_db.prepare("CREATE TABLE IF NOT EXISTS blackhouse (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, username TEXT, reason TEXT, duration TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)").run().catch(() => {});
 			await env.cforum_db.prepare("CREATE TABLE IF NOT EXISTS site_badges (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, description TEXT, color TEXT DEFAULT 'border-amber-500 bg-amber-500/10 text-amber-300', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)").run().catch(() => {});
 		};
@@ -188,34 +189,59 @@ Sitemap: https://blog.t20.de5.net/sitemap.xml
 			}
 		}
 
-		// GET /api/categories (读取全站所有活跃板块)
+		// GET /api/categories (严格按照站长设定的 sort_order 升序排列！)
 		if (url.pathname === '/api/categories' && method === 'GET') {
 			try {
-				const categories = await env.cforum_db.prepare('SELECT id, name, created_at FROM categories ORDER BY id ASC').all();
+				await ensureColumns();
+				const categories = await env.cforum_db.prepare('SELECT id, name, COALESCE(sort_order, id) as sort_order, created_at FROM categories ORDER BY COALESCE(sort_order, id) ASC, id ASC').all();
 				return jsonResponse(categories.results);
 			} catch (e) {
 				return handleError(e);
 			}
 		}
 
-		// POST /api/admin/categories (站长新增板块)
+		// POST /api/admin/categories (新增板块)
 		if (url.pathname === '/api/admin/categories' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
 				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
 
+				await ensureColumns();
 				const body = await request.json() as any;
 				const name = String(body.name || '').trim();
 				if (!name) return jsonResponse({ error: '板块名称不能为空' }, 400);
 
-				const res = await env.cforum_db.prepare('INSERT INTO categories (name) VALUES (?)').bind(name).run();
-				return jsonResponse({ success: true, id: res.meta.last_row_id, name });
+				const maxOrder = await env.cforum_db.prepare('SELECT MAX(sort_order) as m FROM categories').first<{ m: number }>();
+				const nextOrder = (maxOrder?.m || 0) + 1;
+
+				const res = await env.cforum_db.prepare('INSERT INTO categories (name, sort_order) VALUES (?, ?)').bind(name, nextOrder).run();
+				return jsonResponse({ success: true, id: res.meta.last_row_id, name, sort_order: nextOrder });
 			} catch (e) {
 				return handleError(e);
 			}
 		}
 
-		// PUT /api/admin/categories/:id (站长修改板块名称)
+		// POST /api/admin/categories/:id/sort (核心亮点：站长自由调整板块排序位置！)
+		if (url.pathname.match(/^\/api\/admin\/categories\/\d+\/sort$/) && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
+
+				await ensureColumns();
+				const catId = url.pathname.split('/')[4];
+				const body = await request.json() as any;
+				const targetOrder = parseInt(body.sort_order);
+
+				if (isNaN(targetOrder)) return jsonResponse({ error: '请输入有效的排序数字' }, 400);
+
+				await env.cforum_db.prepare('UPDATE categories SET sort_order = ? WHERE id = ?').bind(targetOrder, catId).run();
+				return jsonResponse({ success: true, id: catId, sort_order: targetOrder });
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// PUT /api/admin/categories/:id (修改板块名称)
 		if (url.pathname.match(/^\/api\/admin\/categories\/\d+$/) && method === 'PUT') {
 			try {
 				const userPayload = await authenticate(request);
@@ -233,7 +259,7 @@ Sitemap: https://blog.t20.de5.net/sitemap.xml
 			}
 		}
 
-		// DELETE /api/admin/categories/:id (站长删除板块)
+		// DELETE /api/admin/categories/:id (删除板块)
 		if (url.pathname.match(/^\/api\/admin\/categories\/\d+$/) && method === 'DELETE') {
 			try {
 				const userPayload = await authenticate(request);
@@ -242,7 +268,6 @@ Sitemap: https://blog.t20.de5.net/sitemap.xml
 				const catId = Number(url.pathname.split('/')[4]);
 				if (catId === 9) return jsonResponse({ error: '【公告】为官方系统保留专区，不可删除！' }, 400);
 
-				// 把该分类下的帖子转移到默认的茶水间(1)
 				await env.cforum_db.prepare('UPDATE posts SET category_id = 1 WHERE category_id = ?').bind(catId).run().catch(() => {});
 				await env.cforum_db.prepare('DELETE FROM categories WHERE id = ?').bind(catId).run();
 
