@@ -86,7 +86,6 @@ export default {
 			await env.cforum_db.prepare("ALTER TABLE users ADD COLUMN badges TEXT DEFAULT '[]'").run().catch(() => {});
 		};
 
-		// 严防仿冒官方词库
 		const hasRestrictedKeywords = (username: string): boolean => {
 			const restrictedKeywords = [
 				'admin', 'administrator', 'root', 'system', 'sysadmin',
@@ -208,7 +207,7 @@ export default {
 			}
 		}
 
-		// POST /api/register (加入严格中文仿冒词拦截)
+		// POST /api/register
 		if (url.pathname === '/api/register' && method === 'POST') {
 			try {
 				await ensureColumns();
@@ -220,7 +219,6 @@ export default {
 				if (!email || !username || !password) return jsonResponse({ error: '请填写完整用户名、邮箱和密码' }, 400);
 				if (password.length < 6) return jsonResponse({ error: '密码长度至少 6 位' }, 400);
 
-				// 严禁注册“官方客服/站长/管理”等仿冒名
 				if (hasRestrictedKeywords(username)) {
 					return jsonResponse({ error: '该用户名包含系统官方保留词（如客服、站长、管理等），禁止注册！' }, 400);
 				}
@@ -390,17 +388,24 @@ export default {
 			}
 		}
 
-		// POST /api/posts
+		// POST /api/posts (核心安全铁律：严格禁止普通用户往【公告】板块发帖！)
 		if (url.pathname === '/api/posts' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
 				const body = await request.json() as any;
 				const { title, content, category_id } = body;
+				const catId = Number(category_id) || 1;
+
 				if (!title || !content) return jsonResponse({ error: '标题与内容不能为空' }, 400);
+
+				// 检查：分类 9 为官方【公告】板块，非管理员坚决不准发帖！
+				if (catId === 9 && userPayload.role !== 'admin') {
+					return jsonResponse({ error: '权限不足：【公告】板块为官方权威专区，仅限站长发布！' }, 403);
+				}
 
 				const res = await env.cforum_db.prepare(
 					'INSERT INTO posts (title, content, author_id, category_id) VALUES (?, ?, ?, ?)'
-				).bind(title, content, userPayload.id, category_id || 1).run();
+				).bind(title, content, userPayload.id, catId).run();
 
 				return jsonResponse({ success: true, id: res.meta.last_row_id });
 			} catch (e) {
@@ -408,7 +413,7 @@ export default {
 			}
 		}
 
-		// PUT /api/posts/:id
+		// PUT /api/posts/:id (修改帖子同样受公告专区保护)
 		if (url.pathname.match(/^\/api\/posts\/\d+$/) && method === 'PUT') {
 			try {
 				const userPayload = await authenticate(request);
@@ -416,14 +421,19 @@ export default {
 				const body = await request.json() as any;
 				const title = String(body.title || '').trim();
 				const content = String(body.content || '').trim();
-				const categoryId = body.category_id;
+				const categoryId = Number(body.category_id);
 
 				if (!title || !content) return jsonResponse({ error: '标题与内容不能为空' }, 400);
 
-				const post = await env.cforum_db.prepare('SELECT author_id FROM posts WHERE id = ?').bind(postId).first<{ author_id: number }>();
+				const post = await env.cforum_db.prepare('SELECT author_id, category_id FROM posts WHERE id = ?').bind(postId).first<{ author_id: number; category_id: number }>();
 				if (!post) return jsonResponse({ error: '帖子不存在' }, 404);
 				if (userPayload.role !== 'admin' && post.author_id !== userPayload.id) {
 					return jsonResponse({ error: '无权修改他人帖子' }, 403);
+				}
+
+				// 普通用户不可把帖子移入公告，也不可在公告区修改
+				if ((categoryId === 9 || post.category_id === 9) && userPayload.role !== 'admin') {
+					return jsonResponse({ error: '权限不足：【公告】板块仅限站长操作！' }, 403);
 				}
 
 				await env.cforum_db.prepare(
@@ -716,7 +726,7 @@ export default {
 			}
 		}
 
-		// 核心新增：站长强制修改任意用户昵称接口！
+		// 站长强制改名
 		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/rename$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -728,7 +738,6 @@ export default {
 
 				if (!newName) return jsonResponse({ error: '用户名不能为空' }, 400);
 
-				// 检查新名字是否已被其他人使用
 				const exists = await env.cforum_db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').bind(newName, targetUserId).first();
 				if (exists) return jsonResponse({ error: '该用户名已被占用，请换一个' }, 409);
 
