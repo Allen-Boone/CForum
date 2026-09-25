@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiFetch, getSecurityHeaders, type Category } from '@/lib/api';
 import { getToken, getUser } from '@/lib/auth';
-import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil } from 'lucide-react';
+import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown } from 'lucide-react';
 
 const PRESET_BADGES = [
 	{ name: '🛡️ 白帽守护者', desc: '发现重大漏洞、守护社区安全', color: 'border-blue-500 bg-blue-500/10 text-blue-300' },
@@ -66,10 +66,45 @@ export function AdminPage() {
 		refresh();
 	}, [refresh]);
 
-	// 核心亮点：站长强制修改违规用户的昵称！
+	// 核心亮点：站长专属设置角色等级
+	async function handleSetRole(userId: number, username: string, currentRole: string) {
+		if (userId === 1) return alert('👑 站长主账号受系统保护，角色不可更改！');
+
+		const menu = `【站长设置角色等级】\n正在为【${username}】授予角色：\n\n1 = 🛡️ 社区版主 (moderator)\n2 = 🔥 核心元老 (elder)\n3 = 💎 尊贵VIP (vip)\n4 = 💻 认证极客 (pro)\n5 = ⭐ 活跃会员 (active)\n6 = 🌱 普通会员 (user)\n7 = 🚫 封禁禁言 (banned)\n\n请输入数字编号：`;
+		const choice = prompt(menu, '6');
+		if (choice === null) return;
+
+		const roleMap: Record<string, string> = {
+			'1': 'moderator',
+			'2': 'elder',
+			'3': 'vip',
+			'4': 'pro',
+			'5': 'active',
+			'6': 'user',
+			'7': 'banned'
+		};
+
+		const newRole = roleMap[choice.trim()];
+		if (!newRole) return alert('请输入 1 ~ 7 之间的有效编号！');
+
+		try {
+			const res = await apiFetch<{ success: boolean; role: string }>(`/admin/users/${userId}/role`, {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify({ role: newRole })
+			});
+			if (res.success) {
+				alert(`🎉 角色等级设置成功！已将【${username}】身份更新！`);
+				refresh();
+			}
+		} catch (err: any) {
+			alert('设置角色失败: ' + err.message);
+		}
+	}
+
 	async function handleRenameUser(userId: number, currentName: string) {
 		const input = prompt(
-			`【站长强制修改用户名】\n当前用户名：${currentName}\n\n请输入新的合规用户名（例如：热心坛友${userId}）：`,
+			`【站长强制修改用户名】\n当前用户名：${currentName}\n\n请输入新的合规用户名：`,
 			`坛友_${userId}`
 		);
 		if (!input) return;
@@ -195,6 +230,28 @@ export function AdminPage() {
 		}
 	}
 
+	// 渲染不同角色专属的酷炫勋章标签
+	function renderRoleBadge(role: string) {
+		switch (role) {
+			case 'admin':
+				return <span className="bg-amber-900/40 text-amber-300 border border-amber-800 px-2 py-0.5 rounded text-[11px] font-bold">👑 站长管理员</span>;
+			case 'moderator':
+				return <span className="bg-purple-900/40 text-purple-300 border border-purple-800 px-2 py-0.5 rounded text-[11px] font-bold">🛡️ 社区版主</span>;
+			case 'elder':
+				return <span className="bg-orange-900/40 text-orange-300 border border-orange-800 px-2 py-0.5 rounded text-[11px] font-bold">🔥 核心元老</span>;
+			case 'vip':
+				return <span className="bg-yellow-900/40 text-yellow-300 border border-yellow-800 px-2 py-0.5 rounded text-[11px] font-bold">💎 尊贵VIP</span>;
+			case 'pro':
+				return <span className="bg-cyan-900/40 text-cyan-300 border border-cyan-800 px-2 py-0.5 rounded text-[11px] font-bold">💻 认证极客</span>;
+			case 'active':
+				return <span className="bg-emerald-900/40 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded text-[11px] font-bold">⭐ 活跃会员</span>;
+			case 'banned':
+				return <span className="bg-red-900/50 text-red-300 border border-red-700 px-2 py-0.5 rounded text-[11px] font-bold">🚫 封禁禁言</span>;
+			default:
+				return <span className="bg-gray-800 text-gray-400 border border-gray-700 px-2 py-0.5 rounded text-[11px]">🌱 普通会员</span>;
+		}
+	}
+
 	return (
 		<PageShell>
 			<div className="space-y-6">
@@ -204,7 +261,7 @@ export function AdminPage() {
 							<Shield className="w-5 h-5 text-blue-500" />
 							自由论坛 · 管理控制台
 						</h1>
-						<p className="text-xs text-gray-400 mt-1">站点统计、全站用户、改名封控、全员大授勋与快捷充值中心</p>
+						<p className="text-xs text-gray-400 mt-1">站点统计、全站用户、角色等级册封、全员大授勋与快捷充值中心</p>
 					</div>
 
 					<div className="flex items-center gap-2">
@@ -252,12 +309,12 @@ export function AdminPage() {
 					</Card>
 				</div>
 
-				{/* 会员列表 */}
+				{/* 会员列表与角色管理 */}
 				<Card className="bg-[#161b22] border-[#30363d]">
 					<CardHeader className="py-3 px-4 border-b border-[#30363d]">
 						<CardTitle className="text-sm text-white flex items-center gap-1.5">
 							<Users className="w-4 h-4 text-blue-400" />
-							会员管理、荣誉勋章、强制改名与积分充值
+							会员管理、角色等级册封、荣誉勋章与积分充值
 						</CardTitle>
 					</CardHeader>
 					<CardContent className="p-0 overflow-x-auto">
@@ -267,10 +324,10 @@ export function AdminPage() {
 									<th className="py-2.5 px-4">ID</th>
 									<th className="py-2.5 px-4">用户名</th>
 									<th className="py-2.5 px-4">邮箱</th>
-									<th className="py-2.5 px-4">称号与已佩戴勋章</th>
+									<th className="py-2.5 px-4">称号与勋章</th>
 									<th className="py-2.5 px-4">当前积分</th>
-									<th className="py-2.5 px-4">角色</th>
-									<th className="py-2.5 px-4 text-right">操作管理</th>
+									<th className="py-2.5 px-4">角色等级身份</th>
+									<th className="py-2.5 px-4 text-right">站长管理操作</th>
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-[#21262d]">
@@ -301,13 +358,31 @@ export function AdminPage() {
 												✨ {u.points ?? 0}
 											</td>
 											<td className="py-3 px-4">
-												<span className={`px-1.5 py-0.5 rounded text-[10px] ${u.role === 'admin' ? 'bg-amber-900/40 text-amber-300 border border-amber-800' : 'bg-gray-800 text-gray-400'}`}>
-													{u.role === 'admin' ? '站长管理员' : '普通会员'}
-												</span>
+												{/* 角色标签：支持直接点击触发改角色！ */}
+												<button
+													type="button"
+													onClick={() => handleSetRole(u.id, u.username, u.role)}
+													title="点击可直接更改该用户的角色等级身份"
+													className="hover:scale-105 transition-transform"
+												>
+													{renderRoleBadge(u.role)}
+												</button>
 											</td>
 											<td className="py-3 px-4 text-right">
 												<div className="flex items-center justify-end gap-1.5 flex-wrap">
-													{/* 核心亮点：站长强制给违规用户改名！ */}
+													{/* 站长专属：设角色按钮 */}
+													{u.id !== 1 && (
+														<Button
+															size="sm"
+															variant="outline"
+															onClick={() => handleSetRole(u.id, u.username, u.role)}
+															className="border-purple-500/40 text-purple-300 hover:bg-purple-500/20 text-xs h-6 px-2"
+														>
+															<Crown className="w-3 h-3 mr-1" />
+															设角色
+														</Button>
+													)}
+
 													{u.role !== 'admin' && (
 														<Button
 															size="sm"
