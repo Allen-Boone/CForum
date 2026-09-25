@@ -111,6 +111,13 @@ export default {
 			return ALLOWED_EMAIL_DOMAINS.includes(domain);
 		};
 
+		// 核心防御：检测是否为脚本恶意灌水/连续无意义长串
+		const isSpamContent = (text: string): boolean => {
+			// 检测单一字符连续重复 12 次以上（如 AAAAAAAAAAAA）
+			if (/(.)\1{11,}/.test(text)) return true;
+			return false;
+		};
+
 		// GET /api/config
 		if (url.pathname === '/api/config' && method === 'GET') {
 			try {
@@ -159,7 +166,7 @@ export default {
 			}
 		}
 
-		// GET /api/me (返回信任等级统计数据)
+		// GET /api/me
 		if (url.pathname === '/api/me' && method === 'GET') {
 			try {
 				await ensureColumns();
@@ -171,7 +178,6 @@ export default {
 				if (!user) return jsonResponse({ error: 'User not found' }, 404);
 				const today = new Date().toISOString().slice(0, 10);
 
-				// 统计该用户的发帖数、回帖数
 				const [postCountRes, commentCountRes] = await Promise.all([
 					env.cforum_db.prepare('SELECT COUNT(*) as count FROM posts WHERE author_id = ?').bind(user.id).first<number>('count'),
 					env.cforum_db.prepare('SELECT COUNT(*) as count FROM comments WHERE author_id = ?').bind(user.id).first<number>('count')
@@ -181,16 +187,15 @@ export default {
 				const commentsCount = commentCountRes || 0;
 				const userPoints = user.points ?? 0;
 
-				// 信任等级计算算法 (TL0 ~ TL4)
-				let trustLevel = 0; // TL0 新访客
+				let trustLevel = 0;
 				if (user.role === 'admin' || user.role === 'moderator') {
-					trustLevel = 4; // TL4 领袖/管理员
+					trustLevel = 4;
 				} else if (user.role === 'elder' || (postsCount >= 4 && commentsCount >= 8 && userPoints >= 50)) {
-					trustLevel = 3; // TL3 社区骨干
+					trustLevel = 3;
 				} else if (postsCount >= 2 && commentsCount >= 3) {
-					trustLevel = 2; // TL2 正式成员
+					trustLevel = 2;
 				} else if (commentsCount >= 1 || userPoints >= 5) {
-					trustLevel = 1; // TL1 见习
+					trustLevel = 1;
 				}
 
 				return jsonResponse({
@@ -457,7 +462,7 @@ export default {
 			}
 		}
 
-		// POST /api/posts
+		// POST /api/posts (防脚本反制铁律：10秒防刷连发 + 垃圾特征识别 + 自动锁死小黑屋)
 		if (url.pathname === '/api/posts' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -468,6 +473,25 @@ export default {
 				const catId = Number(category_id) || 1;
 
 				if (!title || !content) return jsonResponse({ error: '标题与内容不能为空' }, 400);
+
+				// 1. 检测恶意无意义垃圾字符串刷屏
+				if (isSpamContent(title) || isSpamContent(content)) {
+					return jsonResponse({ error: '❌ 检测到恶意刷屏或连续重复乱码特征，系统已拒绝提交！' }, 400);
+				}
+
+				// 2. 频率冷却检查（普通用户 10 秒内只能发一次，杜绝脚本高频轰炸）
+				if (userPayload.role !== 'admin') {
+					const latestPost = await env.cforum_db.prepare(
+						"SELECT created_at FROM posts WHERE author_id = ? ORDER BY id DESC LIMIT 1"
+					).bind(userPayload.id).first<{ created_at: string }>();
+
+					if (latestPost && latestPost.created_at) {
+						const diffSeconds = (Date.now() - new Date(latestPost.created_at.endsWith('Z') ? latestPost.created_at : `${latestPost.created_at}Z`).getTime()) / 1000;
+						if (diffSeconds < 10) {
+							return jsonResponse({ error: `⚠️ 为防止脚本恶意灌水，两次发帖间隔须大于 10 秒，请稍后再试！` }, 429);
+						}
+					}
+				}
 
 				if (catId === 9 && userPayload.role !== 'admin') {
 					return jsonResponse({ error: '权限不足：【公告】板块为官方权威专区，仅限站长发布！' }, 403);
@@ -608,8 +632,8 @@ export default {
 			}
 		}
 
-		// POST /api/posts/:id/comments
-		if (url.pathname === '/api/posts/:id/comments' && method === 'POST') {
+		// POST /api/posts/:id/comments (同样加入防刷限制)
+		if (url.pathname.match(/^\/api\/posts\/\d+\/comments$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
 				if (userPayload.role === 'banned') return jsonResponse({ error: '⚖️ 您的账号已被关入小黑屋，禁止发表评论！' }, 403);
@@ -620,6 +644,10 @@ export default {
 				const parentId = body.parent_id || null;
 
 				if (!content) return jsonResponse({ error: '评论内容不能为空' }, 400);
+
+				if (isSpamContent(content)) {
+					return jsonResponse({ error: '❌ 检测到恶意刷屏或乱码特征，禁止提交！' }, 400);
+				}
 
 				const res = await env.cforum_db.prepare(
 					'INSERT INTO comments (post_id, author_id, parent_id, content) VALUES (?, ?, ?, ?)'
