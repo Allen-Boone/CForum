@@ -27,7 +27,6 @@ export function AdminPage() {
 		Array<{ id: number; email: string; username: string; role: string; verified: number; created_at: string; points?: number; title?: string; badges?: string }>
 	>([]);
 
-	// 可视化授勋弹窗状态
 	const [badgeModalOpen, setBadgeModalOpen] = React.useState(false);
 	const [targetUser, setTargetUser] = React.useState<{ id: number; username: string } | null>(null);
 	const [selectedBadges, setSelectedBadges] = React.useState<string[]>([]);
@@ -89,7 +88,6 @@ export function AdminPage() {
 		}
 	}
 
-	// 打开可视化授勋弹窗
 	function openBadgeModal(userId: number, username: string, currentBadgesStr?: string) {
 		let list: string[] = [];
 		try {
@@ -101,14 +99,12 @@ export function AdminPage() {
 		setBadgeModalOpen(true);
 	}
 
-	// 切换单枚勋章勾选状态
 	function toggleBadge(name: string) {
 		setSelectedBadges(prev =>
 			prev.includes(name) ? prev.filter(b => b !== name) : [...prev, name]
 		);
 	}
 
-	// 添加自定义勋章
 	function handleAddCustomBadge() {
 		if (!customBadgeInput.trim()) return;
 		const badge = customBadgeInput.trim();
@@ -118,7 +114,6 @@ export function AdminPage() {
 		setCustomBadgeInput('');
 	}
 
-	// 确认保存授勋
 	async function saveBadges() {
 		if (!targetUser) return;
 		try {
@@ -246,7 +241,6 @@ export function AdminPage() {
 											</td>
 											<td className="py-3 px-4 text-right">
 												<div className="flex items-center justify-end gap-1.5">
-													{/* 点一下直接打开可视化勋章商城！ */}
 													<Button
 														size="sm"
 														variant="outline"
@@ -275,21 +269,21 @@ export function AdminPage() {
 				</Card>
 			</div>
 
-			{/* 站长专属：全可视化勋章选择弹窗 */}
+			{/* 修复后的全景可视化授勋卡片 */}
 			{badgeModalOpen && targetUser && (
-				<div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4">
+				<div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
 					<div className="bg-[#161b22] border border-[#30363d] rounded-xl max-w-lg w-full p-5 space-y-4 shadow-2xl text-white">
 						<div className="flex items-center justify-between border-b border-[#30363d] pb-3">
 							<div className="flex items-center gap-2">
 								<Medal className="w-5 h-5 text-amber-400" />
-								<h3 className="font-bold text-base">站长授勋中心 · 为【{targetUser.username}】颁发荣誉</h3>
+								<h3 className="font-bold text-sm">站长授勋中心 · 为【{targetUser.username}】颁发荣誉</h3>
 							</div>
-							<button onClick={() => setBadgeModalOpen(false)} className="text-gray-400 hover:text-white">
+							<button onClick={() => setBadgeModalOpen(false)} className="text-gray-400 hover:text-white p-1">
 								<X className="w-4 h-4" />
 							</button>
 						</div>
 
-						{/* 预设发光勋章卡片网格：点击直接选中/取消 */}
+						{/* 预设勋章网格 */}
 						<div>
 							<span className="text-xs text-gray-400 block mb-2 font-medium">点击勋章直接佩戴 / 摘下：</span>
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -318,23 +312,24 @@ export function AdminPage() {
 							</div>
 						</div>
 
-						{/* 自定义输入新勋章 */}
+						{/* 自定义输入框（使用原生无依赖 input，杜绝任何崩溃报错） */}
 						<div className="space-y-1.5 pt-1 border-t border-[#21262d]">
 							<span className="text-xs text-gray-400">发明新的专属勋章（可带 Emoji 图标）：</span>
 							<div className="flex gap-2">
-								<Input
+								<input
+									type="text"
 									placeholder="如：🔥 活跃领袖、🚀 运维大佬"
 									value={customBadgeInput}
 									onChange={e => setCustomBadgeInput(e.target.value)}
-									className="bg-[#0d1117] border-[#30363d] text-white text-xs h-8"
+									className="flex-1 bg-[#0d1117] border border-[#30363d] rounded-md px-3 text-white text-xs h-8 outline-none focus:border-blue-500"
 								/>
-								<Button size="sm" onClick={handleAddCustomBadge} className="bg-blue-600 hover:bg-blue-700 text-xs h-8 px-3">
+								<Button type="button" size="sm" onClick={handleAddCustomBadge} className="bg-blue-600 hover:bg-blue-700 text-xs h-8 px-3">
 									添加
 								</Button>
 							</div>
 						</div>
 
-						{/* 当前选中的勋章列表预览 */}
+						{/* 选中的勋章列表预览 */}
 						<div className="bg-[#0d1117] p-2.5 rounded-md border border-[#21262d]">
 							<span className="text-[11px] text-gray-400 block mb-1.5">最终授予佩戴的勋章：</span>
 							{selectedBadges.length === 0 ? (
@@ -344,7 +339,7 @@ export function AdminPage() {
 									{selectedBadges.map((b, i) => (
 										<span key={i} className="bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded text-xs font-bold flex items-center gap-1">
 											{b}
-											<button onClick={() => toggleBadge(b)} className="text-amber-300/60 hover:text-red-400 ml-0.5">✕</button>
+											<button type="button" onClick={() => toggleBadge(b)} className="text-amber-300/60 hover:text-red-400 ml-0.5">✕</button>
 										</span>
 									))}
 								</div>
@@ -352,10 +347,10 @@ export function AdminPage() {
 						</div>
 
 						<div className="flex items-center justify-end gap-2 pt-2 border-t border-[#30363d]">
-							<Button size="sm" variant="ghost" onClick={() => setBadgeModalOpen(false)} className="text-xs text-gray-400">
+							<Button type="button" size="sm" variant="ghost" onClick={() => setBadgeModalOpen(false)} className="text-xs text-gray-400">
 								取消
 							</Button>
-							<Button size="sm" onClick={saveBadges} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-5">
+							<Button type="button" size="sm" onClick={saveBadges} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-5">
 								确认保存授勋
 							</Button>
 						</div>
