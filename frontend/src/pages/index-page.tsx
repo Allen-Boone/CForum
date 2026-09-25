@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Medal } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Gift } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -441,30 +441,56 @@ export function IndexPage() {
 		}
 	}
 
-	async function handleSetBadgeAndReward(postId: number, authorName: string) {
+	// 独立功能 1：纯粹授勋（只改勋章标签，绝对不碰任何积分，彻底防刷！）
+	async function handleSetBadgeOnly(postId: number, authorName: string) {
 		const choice = prompt(
-			`【站长好帖授勋 & 自动发奖】\n正在为作者【${authorName}】授勋：\n1 = 💎 精华（+50积分）\n2 = 🔥 推荐（+20积分）\n3 = 🏆 神帖（+100积分）\n4 = ✨ 原创（+30积分）\n0 = 取消勋章`,
+			`【站长帖子授勋】（纯勋章标识，不增加积分）\n正在为作者【${authorName}】的帖子设置荣誉标识：\n\n1 = 💎 精华\n2 = 🔥 推荐\n3 = 🏆 神帖\n4 = ✨ 原创\n0 = 取消勋章\n\n请输入数字：`,
 			'1'
 		);
 		if (choice === null) return;
-		const map: Record<string, { badge: string | null; bonus: number }> = {
-			'1': { badge: '精华', bonus: 50 },
-			'2': { badge: '推荐', bonus: 20 },
-			'3': { badge: '神帖', bonus: 100 },
-			'4': { badge: '原创', bonus: 30 },
-			'0': { badge: null, bonus: 0 }
+		const map: Record<string, string | null> = {
+			'1': '精华',
+			'2': '推荐',
+			'3': '神帖',
+			'4': '原创',
+			'0': null
 		};
-		const selected = map[choice.trim()];
-		if (!selected) return alert('请输入 0 ~ 4 之间的数字！');
+		const badge = map[choice.trim()];
+		if (badge === undefined) return alert('请输入 0 ~ 4 之间的数字！');
 		try {
 			await apiFetch(`/posts/${postId}/badge`, {
 				method: 'POST',
 				headers: getSecurityHeaders('POST'),
-				body: JSON.stringify(selected)
+				body: JSON.stringify({ badge })
 			});
 			loadPosts();
 		} catch (err: any) {
 			alert('操作失败: ' + err.message);
+		}
+	}
+
+	// 独立功能 2：专享站长打赏（站长自主决定赏多少积分，杜绝误操作！）
+	async function handleRewardPost(postId: number, authorName: string) {
+		const input = prompt(
+			`【站长打赏优质帖子】\n作者：${authorName}\n\n请输入要奖励给作者的积分数值（如 20、50、100）：`,
+			'50'
+		);
+		if (!input) return;
+		const amount = parseInt(input.trim());
+		if (isNaN(amount) || amount <= 0) return alert('请输入大于 0 的有效整数！');
+
+		try {
+			const res = await apiFetch<{ success: boolean; total_reward: number }>(`/posts/${postId}/reward`, {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify({ amount })
+			});
+			if (res.success) {
+				alert(`🎉 打赏成功！已向作者【${authorName}】发放 +${amount} 论坛积分！该帖累计获赏：${res.total_reward}分`);
+				loadPosts();
+			}
+		} catch (err: any) {
+			alert('打赏失败: ' + err.message);
 		}
 	}
 
@@ -625,9 +651,7 @@ export function IndexPage() {
 								filteredPosts.map(post => {
 									const postAuthorBadges = parseBadges(post.author_badges);
 									return (
-										/* 核心改造：完全对标图2！增大字号、拉开行距、大气排版 */
 										<div key={post.id} className="p-4 hover:bg-[#1c2128] transition-colors flex items-start gap-3.5 group">
-											{/* 边栏头像：44px 方圆角，与图2一致 */}
 											<div className="w-11 h-11 rounded-lg bg-[#21262d] flex-shrink-0 flex items-center justify-center font-bold text-gray-300 border border-[#30363d] overflow-hidden shadow-sm">
 												{post.author_avatar ? (
 													<img src={post.author_avatar} alt="" className="w-full h-full object-cover" />
@@ -638,7 +662,6 @@ export function IndexPage() {
 												)}
 											</div>
 
-											{/* 标题与详情区：字号由 15px 升级至 16.5px (text-[16.5px])，字重强化 */}
 											<div className="flex-1 min-w-0">
 												<div className="flex items-center gap-2 flex-wrap leading-normal">
 													{post.is_pinned === 1 && (
@@ -668,7 +691,6 @@ export function IndexPage() {
 													)}
 												</div>
 
-												{/* 作者与时间详情行：字体清晰适中 */}
 												<div className="flex items-center gap-2.5 mt-2 text-[12px] text-gray-400 flex-wrap">
 													<span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
 														{post.author_role === 'admin' ? '👑 站长' : (post.author_title || '🌱 初来乍到')}
@@ -688,15 +710,39 @@ export function IndexPage() {
 														{getCategoryName(post.category_id, post.category_name)}
 													</span>
 
+													{/* 核心升级：授勋与打赏积分彻底拆成两个独立按钮！ */}
 													{user.role === 'admin' && (
 														<span className="ml-auto flex items-center gap-2.5">
-															<button type="button" onClick={() => handleSetBadgeAndReward(post.id, post.author_name || '会员')} className="text-[11px] text-purple-400 hover:underline flex items-center gap-0.5 font-medium">
-																<Award className="w-3 h-3" /> 加精/发奖
+															{/* 纯贴标签：绝不乱加积分 */}
+															<button
+																type="button"
+																onClick={() => handleSetBadgeOnly(post.id, post.author_name || '会员')}
+																className="text-[11px] text-purple-400 hover:underline flex items-center gap-0.5 font-medium"
+															>
+																<Award className="w-3 h-3" /> 授勋
 															</button>
-															<button type="button" onClick={() => handleTogglePin(post.id)} className="text-[11px] text-amber-400 hover:underline flex items-center gap-0.5 font-medium">
+
+															{/* 独立打赏：站长自主决定赏多少积分 */}
+															<button
+																type="button"
+																onClick={() => handleRewardPost(post.id, post.author_name || '会员')}
+																className="text-[11px] text-amber-400 hover:underline flex items-center gap-0.5 font-medium"
+															>
+																<Gift className="w-3 h-3" /> 打赏积分
+															</button>
+
+															<button
+																type="button"
+																onClick={() => handleTogglePin(post.id)}
+																className="text-[11px] text-sky-400 hover:underline flex items-center gap-0.5 font-medium"
+															>
 																<Pin className="w-3 h-3" /> {post.is_pinned === 1 ? '取消置顶' : '置顶'}
 															</button>
-															<button type="button" onClick={() => handleDeletePost(post.id, post.title)} className="text-[11px] text-red-400 hover:underline flex items-center gap-0.5 font-medium">
+															<button
+																type="button"
+																onClick={() => handleDeletePost(post.id, post.title)}
+																className="text-[11px] text-red-400 hover:underline flex items-center gap-0.5 font-medium"
+															>
 																<Trash2 className="w-3 h-3" /> 删除
 															</button>
 														</span>
@@ -704,7 +750,6 @@ export function IndexPage() {
 												</div>
 											</div>
 
-											{/* 回复气泡：更加精致明显 */}
 											<div className="flex items-center gap-1 text-gray-400 group-hover:text-blue-400 bg-[#21262d] px-2.5 py-1 rounded-full text-xs font-bold border border-[#30363d]/60">
 												<MessageSquare className="w-3.5 h-3.5" /> <span>{post.comment_count || 0}</span>
 											</div>
