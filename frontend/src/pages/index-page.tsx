@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, UserX } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, UserX, Medal } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -159,7 +159,7 @@ export function IndexPage() {
 	const [user, setCurrentUser] = React.useState(() => getUser());
 	const [categories, setCategories] = React.useState<Category[]>(DEFAULT_CATEGORIES);
 	const [selectedCategory, setSelectedCategory] = React.useState<string>('all');
-	const [posts, setPosts] = React.useState<Array<Post & { badge?: string | null; reward_points?: number }>>([]);
+	const [posts, setPosts] = React.useState<Array<Post & { badge?: string | null; reward_points?: number; author_badges?: string }>>([]);
 	const [loading, setLoading] = React.useState<boolean>(true);
 	const [activeTab, setActiveTab] = React.useState<'comment' | 'post' | 'featured'>('comment');
 	const [showEditor, setShowEditor] = React.useState<boolean>(false);
@@ -174,6 +174,12 @@ export function IndexPage() {
 		if (!raw || raw.includes('创始站长')) return user?.role === 'admin' ? '👑 站长' : '🌱 初来乍到';
 		return raw;
 	});
+	const [userBadges, setUserBadges] = React.useState<string[]>(() => {
+		const raw = (user as any)?.badges;
+		if (Array.isArray(raw)) return raw;
+		try { return raw ? JSON.parse(raw) : []; } catch (_) { return []; }
+	});
+
 	const [checkedIn, setCheckedIn] = React.useState<boolean>(() => Boolean((user as any)?.checked_in_today));
 	const [uploading, setUploading] = React.useState<boolean>(false);
 	const [avatarUploading, setAvatarUploading] = React.useState<boolean>(false);
@@ -214,6 +220,7 @@ export function IndexPage() {
 							: fresh.title;
 						setPoints(fresh.points ?? 0);
 						setUserTitle(fixedTitle);
+						setUserBadges(Array.isArray(fresh.badges) ? fresh.badges : []);
 						setCheckedIn(Boolean(fresh.checked_in_today));
 						const merged = { ...fresh, title: fixedTitle };
 						setUser(merged);
@@ -316,7 +323,6 @@ export function IndexPage() {
 		}
 	}
 
-	// 核心新增：来去自由 · 用户一键自主彻底注销账号（物理抹除全部痕迹）！
 	async function handleDeleteOwnAccount() {
 		if (!user) return;
 		if (user.role === 'admin') {
@@ -482,6 +488,15 @@ export function IndexPage() {
 		return <span className="bg-blue-600 text-white text-[11px] font-bold px-1.5 py-0.2 rounded">{badge}</span>;
 	}
 
+	function parseBadges(badgesStr?: string): string[] {
+		if (!badgesStr) return [];
+		try {
+			return JSON.parse(badgesStr);
+		} catch (_) {
+			return [];
+		}
+	}
+
 	const navPills = [{ id: 'all', name: '全部主题' }, ...DEFAULT_CATEGORIES.map(c => ({ id: String(c.id), name: c.name }))];
 	const filteredPosts = posts.filter(p => {
 		if (activeTab === 'featured' && !p.badge) return false;
@@ -607,59 +622,71 @@ export function IndexPage() {
 									<p className="text-sm">该分类下暂无主题，快来发布第一帖吧！</p>
 								</div>
 							) : (
-								filteredPosts.map(post => (
-									<div key={post.id} className="p-3.5 hover:bg-[#1c2128] transition-colors flex items-start gap-3 group">
-										<div className="w-10 h-10 rounded-md bg-[#21262d] flex-shrink-0 flex items-center justify-center font-bold text-gray-300 overflow-hidden border border-[#30363d]">
-											{post.author_avatar ? (
-												<img src={post.author_avatar} alt="" className="w-full h-full object-cover" />
-											) : (
-												<span className="text-xs text-blue-400">{(post.author_name || 'U').slice(0, 2).toUpperCase()}</span>
-											)}
-										</div>
-										<div className="flex-1 min-w-0">
-											<div className="flex items-center gap-1.5 flex-wrap">
-												{post.is_pinned === 1 && <span className="bg-[#b35900] text-white text-[11px] font-bold px-1.5 py-0.2 rounded">置顶</span>}
-												{renderBadge(post.badge)}
-												<a href={`/post?id=${post.id}`} className={`text-[15px] font-medium group-hover:text-blue-400 ${post.is_pinned === 1 ? 'text-[#ff7b72] font-semibold' : 'text-gray-100'}`}>
-													{post.title}
-												</a>
-												{(post.reward_points ?? 0) > 0 && (
-													<span className="bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
-														🎁 已赏 +{post.reward_points}分
-													</span>
+								filteredPosts.map(post => {
+									const postAuthorBadges = parseBadges(post.author_badges);
+									return (
+										<div key={post.id} className="p-3.5 hover:bg-[#1c2128] transition-colors flex items-start gap-3 group">
+											<div className="w-10 h-10 rounded-md bg-[#21262d] flex-shrink-0 flex items-center justify-center font-bold text-gray-300 border border-[#30363d]">
+												{post.author_avatar ? (
+													<img src={post.author_avatar} alt="" className="w-full h-full object-cover rounded-md" />
+												) : (
+													<span className="text-xs text-blue-400">{(post.author_name || 'U').slice(0, 2).toUpperCase()}</span>
 												)}
 											</div>
-											<div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400 flex-wrap">
-												<span className="text-[11px] font-medium px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
-													{post.author_role === 'admin' ? '👑 站长' : (post.author_title || '🌱 初来乍到')}
-												</span>
-												<span className="font-medium text-gray-300">{post.author_name || '会员'}</span>
-												<span>•</span>
-												<span>{formatDate(post.created_at)}</span>
-												<span>•</span>
-												<span className="bg-[#21262d] text-gray-300 px-1.5 py-0.5 rounded text-[11px] border border-[#30363d]">
-													{getCategoryName(post.category_id, post.category_name)}
-												</span>
-												{user.role === 'admin' && (
-													<span className="ml-auto flex items-center gap-2.5">
-														<button type="button" onClick={() => handleSetBadgeAndReward(post.id, post.author_name || '会员')} className="text-[11px] text-purple-400 hover:underline flex items-center gap-0.5">
-															<Award className="w-3 h-3" /> 加精/发奖
-														</button>
-														<button type="button" onClick={() => handleTogglePin(post.id)} className="text-[11px] text-amber-400 hover:underline flex items-center gap-0.5">
-															<Pin className="w-3 h-3" /> {post.is_pinned === 1 ? '取消置顶' : '置顶'}
-														</button>
-														<button type="button" onClick={() => handleDeletePost(post.id, post.title)} className="text-[11px] text-red-400 hover:underline flex items-center gap-0.5">
-															<Trash2 className="w-3 h-3" /> 删除
-														</button>
+											<div className="flex-1 min-w-0">
+												<div className="flex items-center gap-1.5 flex-wrap">
+													{post.is_pinned === 1 && <span className="bg-[#b35900] text-white text-[11px] font-bold px-1.5 py-0.2 rounded">置顶</span>}
+													{renderBadge(post.badge)}
+													<a href={`/post?id=${post.id}`} className={`text-[15px] font-medium group-hover:text-blue-400 ${post.is_pinned === 1 ? 'text-[#ff7b72] font-semibold' : 'text-gray-100'}`}>
+														{post.title}
+													</a>
+													{(post.reward_points ?? 0) > 0 && (
+														<span className="bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+															🎁 已赏 +{post.reward_points}分
+														</span>
+													)}
+												</div>
+												<div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400 flex-wrap">
+													{/* 佩戴称号 */}
+													<span className="text-[11px] font-medium px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+														{post.author_role === 'admin' ? '👑 站长' : (post.author_title || '🌱 初来乍到')}
 													</span>
-												)}
+
+													{/* 核心亮点：作者名字旁佩戴的专属荣誉勋章！ */}
+													{postAuthorBadges.map((b, bi) => (
+														<span key={bi} className="bg-amber-500/15 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded text-[10px] font-bold flex items-center gap-0.5">
+															{b}
+														</span>
+													))}
+
+													<span className="font-medium text-gray-300">{post.author_name || '会员'}</span>
+													<span>•</span>
+													<span>{formatDate(post.created_at)}</span>
+													<span>•</span>
+													<span className="bg-[#21262d] text-gray-300 px-1.5 py-0.5 rounded text-[11px] border border-[#30363d]">
+														{getCategoryName(post.category_id, post.category_name)}
+													</span>
+													{user.role === 'admin' && (
+														<span className="ml-auto flex items-center gap-2.5">
+															<button type="button" onClick={() => handleSetBadgeAndReward(post.id, post.author_name || '会员')} className="text-[11px] text-purple-400 hover:underline flex items-center gap-0.5">
+																<Award className="w-3 h-3" /> 加精/发奖
+															</button>
+															<button type="button" onClick={() => handleTogglePin(post.id)} className="text-[11px] text-amber-400 hover:underline flex items-center gap-0.5">
+																<Pin className="w-3 h-3" /> {post.is_pinned === 1 ? '取消置顶' : '置顶'}
+															</button>
+															<button type="button" onClick={() => handleDeletePost(post.id, post.title)} className="text-[11px] text-red-400 hover:underline flex items-center gap-0.5">
+																<Trash2 className="w-3 h-3" /> 删除
+															</button>
+														</span>
+													)}
+												</div>
+											</div>
+											<div className="flex items-center gap-1 text-gray-400 bg-[#21262d] px-2 py-1 rounded-full text-xs font-semibold">
+												<MessageSquare className="w-3.5 h-3.5" /> <span>{post.comment_count || 0}</span>
 											</div>
 										</div>
-										<div className="flex items-center gap-1 text-gray-400 bg-[#21262d] px-2 py-1 rounded-full text-xs font-semibold">
-											<MessageSquare className="w-3.5 h-3.5" /> <span>{post.comment_count || 0}</span>
-										</div>
-									</div>
-								))
+									);
+								})
 							)}
 						</div>
 					)}
@@ -737,6 +764,18 @@ export function IndexPage() {
 										</button>
 									</div>
 								</div>
+
+								{/* 个人专属勋章荣誉墙展示 */}
+								{userBadges.length > 0 && (
+									<div className="bg-[#0d1117] p-2 rounded-md border border-[#21262d] flex flex-wrap gap-1.5">
+										{userBadges.map((b, bi) => (
+											<span key={bi} className="bg-amber-500/15 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded text-[10px] font-bold">
+												{b}
+											</span>
+										))}
+									</div>
+								)}
+
 								<div className="bg-[#0d1117] p-2.5 rounded-md border border-[#21262d] flex items-center justify-between">
 									<div>
 										<span className="text-[11px] text-gray-400 block">论坛积分</span>
@@ -761,7 +800,6 @@ export function IndexPage() {
 						)}
 					</div>
 
-					{/* 快捷功能：新增【🚪 账号注销（来去自由）】 */}
 					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3.5 text-xs space-y-2">
 						<span className="font-bold text-gray-200 block mb-2">快捷功能</span>
 						<div className="grid grid-cols-2 gap-y-2 text-gray-400">
