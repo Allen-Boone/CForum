@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiFetch, getSecurityHeaders } from '@/lib/api';
 import { getToken, getUser } from '@/lib/auth';
-import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown, ArrowUpDown } from 'lucide-react';
+import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown, ArrowUpDown, Gavel } from 'lucide-react';
 
 const PRESET_BADGES = [
 	{ name: '🛡️ 白帽守护者', desc: '发现重大漏洞、守护社区安全', color: 'border-blue-500 bg-blue-500/10 text-blue-300' },
@@ -27,7 +27,6 @@ export function AdminPage() {
 		Array<{ id: number; email: string; username: string; role: string; verified: number; created_at: string; points?: number; title?: string; badges?: string }>
 	>([]);
 
-	// 排序状态：默认降序展示最新注册
 	const [sortOrder, setSortOrder] = React.useState<'desc' | 'asc'>('desc');
 
 	const [badgeModalOpen, setBadgeModalOpen] = React.useState(false);
@@ -68,6 +67,39 @@ export function AdminPage() {
 	React.useEffect(() => {
 		refresh();
 	}, [refresh]);
+
+	// 核心亮点：站长专属一键抓入小黑屋公示！
+	async function handleBanishToBlackhouse(userId: number, username: string) {
+		if (userId === 1) return alert('👑 站长主账号受系统保护，不可关押！');
+
+		const menu = `【站长执法 · 关入社区小黑屋公示】\n目标违规用户：${username}\n\n请选择违规处分类型：\n1 = 冒充官方与客服欺诈（关押 30 天）\n2 = 恶意引战辱骂他人（关押 7 天）\n3 = 恶意广告与灌水刷屏（关押 3 天）\n4 = 严重破坏社区安全（永久封禁）\n\n请输入数字编号：`;
+		const choice = prompt(menu, '1');
+		if (choice === null) return;
+
+		const banMap: Record<string, { reason: string; duration: string }> = {
+			'1': { reason: '冒充官方机构与客服欺诈', duration: '30 天' },
+			'2': { reason: '恶意引战、开盒与辱骂他人', duration: '7 天' },
+			'3': { reason: '恶意灌水刷屏与引流广告', duration: '3 天' },
+			'4': { reason: '严重危害社区安全秩序', duration: '永久封禁' }
+		};
+
+		const plan = banMap[choice.trim()];
+		if (!plan) return alert('请输入 1 ~ 4 之间的有效数字！');
+
+		try {
+			const res = await apiFetch<{ success: boolean; username: string }>(`/admin/users/${userId}/banish`, {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify(plan)
+			});
+			if (res.success) {
+				alert(`⚖️ 执法完成！已将违规用户【${res.username}】关入小黑屋！\n罪由：${plan.reason}\n刑期：${plan.duration}\n已自动同步全站小黑屋名单公示！`);
+				refresh();
+			}
+		} catch (err: any) {
+			alert('关押失败: ' + err.message);
+		}
+	}
 
 	async function handleSetRole(userId: number, username: string, currentRole: string) {
 		if (userId === 1) return alert('👑 站长主账号受系统保护，角色不可更改！');
@@ -247,13 +279,12 @@ export function AdminPage() {
 			case 'active':
 				return <span className="bg-emerald-900/40 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded text-[11px] font-bold">⭐ 活跃会员</span>;
 			case 'banned':
-				return <span className="bg-red-900/50 text-red-300 border border-red-700 px-2 py-0.5 rounded text-[11px] font-bold">🚫 封禁禁言</span>;
+				return <span className="bg-red-900/50 text-red-300 border border-red-700 px-2 py-0.5 rounded text-[11px] font-bold">⚖️ 小黑屋服刑</span>;
 			default:
 				return <span className="bg-gray-800 text-gray-400 border border-gray-700 px-2 py-0.5 rounded text-[11px]">🌱 普通会员</span>;
 		}
 	}
 
-	// 连续整齐排列逻辑：排序并生成 1, 2, 3, 4, 5... 连续序号
 	const sortedUsers = React.useMemo(() => {
 		const list = [...users];
 		if (sortOrder === 'asc') {
@@ -273,7 +304,7 @@ export function AdminPage() {
 							<Shield className="w-5 h-5 text-blue-500" />
 							自由论坛 · 管理控制台
 						</h1>
-						<p className="text-xs text-gray-400 mt-1">站点统计、全站用户、角色等级册封、全员大授勋与快捷充值中心</p>
+						<p className="text-xs text-gray-400 mt-1">站点统计、全站用户、小黑屋执法、全员大授勋与快捷充值中心</p>
 					</div>
 
 					<div className="flex items-center gap-2">
@@ -321,7 +352,7 @@ export function AdminPage() {
 					</Card>
 				</div>
 
-				{/* 会员列表：严谨连续序号排列 + 点击可切换正序/倒序 */}
+				{/* 会员列表与小黑屋执法 */}
 				<Card className="bg-[#161b22] border-[#30363d]">
 					<CardHeader className="py-3 px-4 border-b border-[#30363d] flex flex-row items-center justify-between">
 						<CardTitle className="text-sm text-white flex items-center gap-1.5">
@@ -342,7 +373,6 @@ export function AdminPage() {
 						<table className="w-full text-xs text-left text-gray-300">
 							<thead className="bg-[#0d1117] text-gray-400 border-b border-[#30363d]">
 								<tr>
-									{/* 核心升级：自然连续序号，整整齐齐绝对不跳号！ */}
 									<th className="py-2.5 px-4 w-16 text-center">序号</th>
 									<th className="py-2.5 px-4">用户名</th>
 									<th className="py-2.5 px-4">邮箱</th>
@@ -355,7 +385,6 @@ export function AdminPage() {
 							<tbody className="divide-y divide-[#21262d]">
 								{sortedUsers.map((u, index) => {
 									const userBadges = parseUserBadges(u.badges);
-									// 自然连续序号：从 1, 2, 3... 一直到 30，整齐治愈！
 									const sequenceNumber = sortOrder === 'desc' ? users.length - index : index + 1;
 
 									return (
@@ -400,6 +429,19 @@ export function AdminPage() {
 											</td>
 											<td className="py-3 px-4 text-right">
 												<div className="flex items-center justify-end gap-1.5 flex-wrap">
+													{/* 核心亮点：站长执法【关小黑屋】按钮！ */}
+													{u.id !== 1 && (
+														<Button
+															size="sm"
+															variant="outline"
+															onClick={() => handleBanishToBlackhouse(u.id, u.username)}
+															className="border-rose-500/50 text-rose-300 hover:bg-rose-500/20 text-xs h-6 px-2"
+														>
+															<Gavel className="w-3 h-3 mr-1" />
+															关小黑屋
+														</Button>
+													)}
+
 													{u.id !== 1 && (
 														<Button
 															size="sm"
