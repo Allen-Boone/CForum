@@ -2,9 +2,9 @@ import * as React from 'react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { apiFetch, getSecurityHeaders } from '@/lib/api';
+import { apiFetch, getSecurityHeaders, type Category } from '@/lib/api';
 import { getToken, getUser } from '@/lib/auth';
-import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown, ArrowUpDown, Gavel, Hammer, Plus, Trash2 } from 'lucide-react';
+import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown, ArrowUpDown, Gavel, Hammer, Plus, Trash2, FolderKanban } from 'lucide-react';
 
 interface SiteBadge {
 	id: number;
@@ -24,7 +24,11 @@ export function AdminPage() {
 		Array<{ id: number; email: string; username: string; role: string; verified: number; created_at: string; points?: number; title?: string; badges?: string }>
 	>([]);
 
-	// 勋章军械库（动态读取数据库里的全部勋章）
+	// 动态板块分类管理
+	const [categories, setCategories] = React.useState<Category[]>([]);
+	const [newCatName, setNewCatName] = React.useState('');
+
+	// 勋章军械库
 	const [badgeList, setBadgeList] = React.useState<SiteBadge[]>([]);
 	const [forgeModalOpen, setForgeModalOpen] = React.useState(false);
 	const [newBadgeName, setNewBadgeName] = React.useState('');
@@ -61,6 +65,13 @@ export function AdminPage() {
 		} catch (_) {}
 	}, [batchBadge]);
 
+	const loadCategories = React.useCallback(async () => {
+		try {
+			const cats = await apiFetch<Category[]>('/categories');
+			if (cats) setCategories(cats);
+		} catch (_) {}
+	}, []);
+
 	const refresh = React.useCallback(async () => {
 		setLoading(true);
 		setError('');
@@ -75,19 +86,69 @@ export function AdminPage() {
 			]);
 			setStats(s);
 			setUsers(u || []);
-			await loadBadges();
+			await Promise.all([loadBadges(), loadCategories()]);
 		} catch (e: any) {
 			setError(e.message || '加载后台数据失败');
 		} finally {
 			setLoading(false);
 		}
-	}, [loadBadges]);
+	}, [loadBadges, loadCategories]);
 
 	React.useEffect(() => {
 		refresh();
 	}, [refresh]);
 
-	// 核心亮点：站长手动铸造并永久入库新勋章！
+	// 核心亮点 1：站长在后台创建新板块
+	async function handleCreateCategory(e: React.FormEvent) {
+		e.preventDefault();
+		if (!newCatName.trim()) return alert('请输入板块名称！');
+		try {
+			await apiFetch('/admin/categories', {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify({ name: newCatName.trim() })
+			});
+			setNewCatName('');
+			alert('🎉 新板块创建成功！全站导航栏已实时同步！');
+			loadCategories();
+		} catch (err: any) {
+			alert('创建失败: ' + err.message);
+		}
+	}
+
+	// 核心亮点 2：站长在后台修改板块名字
+	async function handleRenameCategory(catId: number, oldName: string) {
+		const next = prompt(`【修改板块名称】\n当前名称：${oldName}\n\n请输入新的板块名称：`, oldName);
+		if (!next || next.trim() === oldName) return;
+		try {
+			await apiFetch(`/admin/categories/${catId}`, {
+				method: 'PUT',
+				headers: getSecurityHeaders('PUT'),
+				body: JSON.stringify({ name: next.trim() })
+			});
+			alert('🎉 板块名称修改成功！');
+			loadCategories();
+		} catch (err: any) {
+			alert('修改失败: ' + err.message);
+		}
+	}
+
+	// 核心亮点 3：站长在后台删除板块
+	async function handleDeleteCategory(catId: number, catName: string) {
+		if (catId === 9) return alert('【公告】板块为官方专区，不可删除！');
+		if (!confirm(`确定要删除板块【${catName}】吗？\n（该板块下的帖子会自动安全移入【茶水间】）`)) return;
+		try {
+			await apiFetch(`/admin/categories/${catId}`, {
+				method: 'DELETE',
+				headers: getSecurityHeaders('DELETE')
+			});
+			alert('板块已删除！');
+			loadCategories();
+		} catch (err: any) {
+			alert('删除失败: ' + err.message);
+		}
+	}
+
 	async function handleForgeNewBadge(e: React.FormEvent) {
 		e.preventDefault();
 		if (!newBadgeName.trim()) return alert('请输入勋章名称与图标！');
@@ -113,7 +174,6 @@ export function AdminPage() {
 		}
 	}
 
-	// 删除勋章库中的勋章
 	async function handleDeleteBadge(badgeId: number, name: string) {
 		if (!confirm(`确定要从军械库销毁勋章【${name}】吗？`)) return;
 		try {
@@ -362,11 +422,10 @@ export function AdminPage() {
 							<Shield className="w-5 h-5 text-blue-500" />
 							自由论坛 · 管理控制台
 						</h1>
-						<p className="text-xs text-gray-400 mt-1">站点统计、全站用户、勋章铸造、全员大授勋与快捷充值中心</p>
+						<p className="text-xs text-gray-400 mt-1">站点统计、板块管理、全站用户、勋章铸造、全员大授勋与快捷充值中心</p>
 					</div>
 
 					<div className="flex items-center gap-2 flex-wrap">
-						{/* 核心亮点：站长手动铸造勋章军械库入口 */}
 						<Button
 							size="sm"
 							onClick={() => setForgeModalOpen(true)}
@@ -419,6 +478,60 @@ export function AdminPage() {
 						</CardContent>
 					</Card>
 				</div>
+
+				{/* 核心亮点：全站板块分类可视化管理卡片 */}
+				<Card className="bg-[#161b22] border-[#30363d]">
+					<CardHeader className="py-3 px-4 border-b border-[#30363d] flex flex-row items-center justify-between">
+						<CardTitle className="text-sm text-white flex items-center gap-1.5">
+							<FolderKanban className="w-4 h-4 text-emerald-400" />
+							社区板块分类管理（添加新板块、改名、删除）
+						</CardTitle>
+					</CardHeader>
+					<CardContent className="p-4 space-y-4">
+						{/* 添加新板块表单 */}
+						<form onSubmit={handleCreateCategory} className="flex gap-2 max-w-md">
+							<input
+								type="text"
+								placeholder="如：🛠️ 极客硬件、💰 掘金项目、📦 资源分享"
+								value={newCatName}
+								onChange={e => setNewCatName(e.target.value)}
+								className="flex-1 bg-[#0d1117] border border-[#30363d] rounded px-3 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
+							/>
+							<Button type="submit" size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8 px-4">
+								<Plus className="w-3.5 h-3.5 mr-1" /> 添加板块
+							</Button>
+						</form>
+
+						{/* 现有板块列表 */}
+						<div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+							{categories.map(c => (
+								<div key={c.id} className="p-2.5 rounded-lg border border-[#30363d] bg-[#0d1117] flex items-center justify-between gap-2 text-xs">
+									<span className="font-bold text-gray-200 truncate">{c.name}</span>
+									<div className="flex items-center gap-1">
+										<button
+											type="button"
+											onClick={() => handleRenameCategory(c.id, c.name)}
+											className="text-gray-400 hover:text-sky-400 p-1"
+											title="修改名称"
+										>
+											<Pencil className="w-3 h-3" />
+										</button>
+										{c.id !== 9 && (
+											<button
+												type="button"
+												onClick={() => handleDeleteCategory(c.id, c.name)}
+												className="text-gray-400 hover:text-red-400 p-1"
+												title="删除板块"
+											>
+												<Trash2 className="w-3 h-3" />
+											</button>
+										)}
+									</div>
+								</div>
+							))}
+						</div>
+					</CardContent>
+				</Card>
 
 				{/* 会员列表与管理操作 */}
 				<Card className="bg-[#161b22] border-[#30363d]">
@@ -560,7 +673,7 @@ export function AdminPage() {
 				</Card>
 			</div>
 
-			{/* 弹窗 A：站长全可视化【勋章铸造军械库】 */}
+			{/* 弹窗 A：勋章铸造军械库 */}
 			{forgeModalOpen && (
 				<div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
 					<div className="bg-[#161b22] border border-purple-500/50 rounded-xl max-w-xl w-full p-6 space-y-5 shadow-2xl text-white">
@@ -574,7 +687,6 @@ export function AdminPage() {
 							</button>
 						</div>
 
-						{/* 铸造表单 */}
 						<form onSubmit={handleForgeNewBadge} className="bg-[#0d1117] p-4 rounded-xl border border-[#21262d] space-y-3">
 							<span className="text-xs font-bold text-gray-200 block">铸造全新专属稀缺勋章：</span>
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -622,7 +734,6 @@ export function AdminPage() {
 							</div>
 						</form>
 
-						{/* 现有勋章库陈列清单 */}
 						<div>
 							<span className="text-xs font-bold text-gray-400 block mb-2">当前军械库在册的全部勋章（{badgeList.length} 枚）：</span>
 							<div className="max-h-48 overflow-y-auto space-y-2 pr-1">
@@ -656,7 +767,7 @@ export function AdminPage() {
 				</div>
 			)}
 
-			{/* 弹窗 B：动态加载军械库所有勋章的【单人授勋面板】 */}
+			{/* 弹窗 B：单人授勋面板 */}
 			{badgeModalOpen && targetUser && (
 				<div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
 					<div className="bg-[#161b22] border border-[#30363d] rounded-xl max-w-lg w-full p-5 space-y-4 shadow-2xl text-white">
@@ -670,7 +781,6 @@ export function AdminPage() {
 							</button>
 						</div>
 
-						{/* 直接从后台动态勋章军械库加载！ */}
 						<div>
 							<span className="text-xs text-gray-400 block mb-2 font-medium">点击勋章直接佩戴 / 摘下（实时同步军械库）：</span>
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
@@ -699,9 +809,8 @@ export function AdminPage() {
 							</div>
 						</div>
 
-						{/* 自定义临时勋章输入 */}
 						<div className="space-y-1.5 pt-1 border-t border-[#21262d]">
-							<span className="text-xs text-gray-400">临时手打新勋章（如需长期保存，推荐使用左上角【铸造专属勋章】）：</span>
+							<span className="text-xs text-gray-400">临时手打新勋章：</span>
 							<div className="flex gap-2">
 								<input
 									type="text"
@@ -716,7 +825,6 @@ export function AdminPage() {
 							</div>
 						</div>
 
-						{/* 选中的勋章列表预览 */}
 						<div className="bg-[#0d1117] p-2.5 rounded-md border border-[#21262d]">
 							<span className="text-[11px] text-gray-400 block mb-1.5">最终授予佩戴的勋章：</span>
 							{selectedBadges.length === 0 ? (
@@ -745,7 +853,7 @@ export function AdminPage() {
 				</div>
 			)}
 
-			{/* 弹窗 C：全员一键大授勋弹窗 */}
+			{/* 弹窗 C：全员一键大授勋 */}
 			{batchModalOpen && (
 				<div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
 					<div className="bg-[#161b22] border border-amber-500/40 rounded-xl max-w-md w-full p-5 space-y-4 shadow-2xl text-white">
