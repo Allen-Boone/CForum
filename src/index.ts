@@ -11,6 +11,7 @@ interface DBUser {
     points?: number;
     title?: string;
     badges?: string;
+    reg_ip?: string;
     last_checkin_date?: string;
     created_at?: string;
 }
@@ -44,7 +45,18 @@ export default {
 		const url = new URL(request.url);
 		const method = request.method;
 
-		// 1. Google 官方 SEO 专用标准 sitemap.xml 接口
+		// 核心安全：获取访客真实 IP
+		const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '127.0.0.1';
+
+		// 全局第一防线：检查是否为站长封禁的恶意黑名单 IP
+		try {
+			const isBannedIp = await env.cforum_db.prepare('SELECT ip FROM banned_ips WHERE ip = ?').bind(clientIp).first();
+			if (isBannedIp) {
+				return jsonResponse({ error: '🚫 您的 IP 涉嫌恶意脚本攻击，已被自由论坛全站永久物理封锁！' }, 403);
+			}
+		} catch (_) {}
+
+		// Google 官方 SEO sitemap
 		if (url.pathname === '/sitemap.xml' && method === 'GET') {
 			const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -63,40 +75,17 @@ export default {
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
-  <url>
-    <loc>https://blog.t20.de5.net/post?id=102</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://blog.t20.de5.net/post?id=103</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
 </urlset>`;
 			return new Response(sitemapXml, {
 				status: 200,
-				headers: {
-					'Content-Type': 'application/xml; charset=utf-8',
-					'Cache-Control': 'public, max-age=3600',
-					'Access-Control-Allow-Origin': '*'
-				}
+				headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Access-Control-Allow-Origin': '*' }
 			});
 		}
 
-		// 2. Google 官方爬虫放行 robots.txt 接口
 		if (url.pathname === '/robots.txt' && method === 'GET') {
-			const robotsTxt = `User-agent: *
-Allow: /
-Sitemap: https://blog.t20.de5.net/sitemap.xml
-`;
-			return new Response(robotsTxt, {
+			return new Response(`User-agent: *\nAllow: /\nSitemap: https://blog.t20.de5.net/sitemap.xml\n`, {
 				status: 200,
-				headers: {
-					'Content-Type': 'text/plain; charset=utf-8',
-					'Cache-Control': 'public, max-age=3600',
-					'Access-Control-Allow-Origin': '*'
-				}
+				headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Access-Control-Allow-Origin': '*' }
 			});
 		}
 
@@ -141,9 +130,11 @@ Sitemap: https://blog.t20.de5.net/sitemap.xml
 			await env.cforum_db.prepare('ALTER TABLE posts ADD COLUMN badge TEXT').run().catch(() => {});
 			await env.cforum_db.prepare('ALTER TABLE posts ADD COLUMN reward_points INTEGER DEFAULT 0').run().catch(() => {});
 			await env.cforum_db.prepare("ALTER TABLE users ADD COLUMN badges TEXT DEFAULT '[]'").run().catch(() => {});
+			await env.cforum_db.prepare("ALTER TABLE users ADD COLUMN reg_ip TEXT").run().catch(() => {});
 			await env.cforum_db.prepare("ALTER TABLE categories ADD COLUMN sort_order INTEGER DEFAULT 0").run().catch(() => {});
 			await env.cforum_db.prepare("CREATE TABLE IF NOT EXISTS blackhouse (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, username TEXT, reason TEXT, duration TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)").run().catch(() => {});
 			await env.cforum_db.prepare("CREATE TABLE IF NOT EXISTS site_badges (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, description TEXT, color TEXT DEFAULT 'border-amber-500 bg-amber-500/10 text-amber-300', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)").run().catch(() => {});
+			await env.cforum_db.prepare("CREATE TABLE IF NOT EXISTS banned_ips (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT UNIQUE NOT NULL, reason TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)").run().catch(() => {});
 		};
 
 		const hasRestrictedKeywords = (username: string): boolean => {
@@ -302,10 +293,7 @@ Sitemap: https://blog.t20.de5.net/sitemap.xml
 
 				if (!name) return jsonResponse({ error: '勋章名称不能为空' }, 400);
 
-				await env.cforum_db.prepare(
-					"INSERT INTO site_badges (name, description, color) VALUES (?, ?, ?)"
-				).bind(name, description, color).run();
-
+				await env.cforum_db.prepare("INSERT INTO site_badges (name, description, color) VALUES (?, ?, ?)").bind(name, description, color).run();
 				return jsonResponse({ success: true, name });
 			} catch (e) {
 				return handleError(e);
@@ -413,7 +401,7 @@ Sitemap: https://blog.t20.de5.net/sitemap.xml
 			}
 		}
 
-		// POST /api/user/avatar (加入用户名长度防护，严惩长名炸房！)
+		// POST /api/user/avatar
 		if (url.pathname === '/api/user/avatar' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -469,10 +457,22 @@ Sitemap: https://blog.t20.de5.net/sitemap.xml
 			}
 		}
 
-		// POST /api/register
+		// POST /api/register (三维防脚本：单IP频率熔断 + 邮箱白名单 + 自动记入客户端IP)
 		if (url.pathname === '/api/register' && method === 'POST') {
 			try {
 				await ensureColumns();
+
+				// 频率熔断防护：单个 IP 在 24 小时内最多只允许注册 2 个号！超过直接封杀！
+				const ipRegCount = await env.cforum_db.prepare(
+					"SELECT COUNT(*) as count FROM users WHERE reg_ip = ? AND created_at > datetime('now', '-24 hours')"
+				).bind(clientIp).first<{ count: number }>();
+
+				if (ipRegCount && ipRegCount.count >= 2) {
+					// 自动拉黑这个高频机器人 IP！
+					await env.cforum_db.prepare("INSERT OR IGNORE INTO banned_ips (ip, reason) VALUES (?, '单IP恶意高频批量注册')").bind(clientIp).run().catch(() => {});
+					return jsonResponse({ error: '🚫 您的 IP 注册频率过高，涉嫌脚本批量灌水，已被系统自动拦截！' }, 429);
+				}
+
 				const body = await request.json() as any;
 				const email = String(body.email || '').trim().toLowerCase();
 				const username = String(body.username || '').trim();
@@ -506,9 +506,10 @@ Sitemap: https://blog.t20.de5.net/sitemap.xml
 
 				const passwordHash = await hashPassword(password);
 
+				// 记入客户端 IP，给站长提供精准溯源与拉黑依据！
 				const { success, meta } = await env.cforum_db.prepare(
-					"INSERT INTO users (email, username, password, role, verified, points, title, badges) VALUES (?, ?, ?, 'user', 1, 0, ?, '[]')"
-				).bind(email, username, passwordHash, '🌱 初来乍到').run();
+					"INSERT INTO users (email, username, password, role, verified, points, title, badges, reg_ip) VALUES (?, ?, ?, 'user', 1, 0, ?, '[]', ?)"
+				).bind(email, username, passwordHash, '🌱 初来乍到', clientIp).run();
 
 				if (!success) return jsonResponse({ error: '注册失败' }, 500);
 
@@ -1009,6 +1010,7 @@ Sitemap: https://blog.t20.de5.net/sitemap.xml
 			}
 		}
 
+		// GET /api/admin/users (带出真实的注册 IP，仅站长可见！)
 		if (url.pathname === '/api/admin/users' && method === 'GET') {
 			try {
 				await ensureColumns();
@@ -1016,9 +1018,32 @@ Sitemap: https://blog.t20.de5.net/sitemap.xml
 				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
 
 				const users = await env.cforum_db.prepare(
-					'SELECT id, email, username, role, verified, created_at, avatar_url, points, title, badges FROM users ORDER BY id DESC'
+					'SELECT id, email, username, role, verified, created_at, avatar_url, points, title, badges, reg_ip FROM users ORDER BY id DESC'
 				).all();
 				return jsonResponse(users.results);
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// 核心神权：站长一键物理封禁恶意 IP 地址！
+		if (url.pathname === '/api/admin/ban-ip' && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
+
+				await ensureColumns();
+				const body = await request.json() as any;
+				const targetIp = String(body.ip || '').trim();
+				const reason = String(body.reason || '站长手动拉黑恶意IP').trim();
+
+				if (!targetIp || targetIp === '127.0.0.1') return jsonResponse({ error: '无法封禁无效的IP' }, 400);
+
+				await env.cforum_db.prepare("INSERT OR IGNORE INTO banned_ips (ip, reason) VALUES (?, ?)").bind(targetIp, reason).run();
+				// 同步把该 IP 下注册的所有小号全部关入小黑屋！
+				await env.cforum_db.prepare("UPDATE users SET role = 'banned' WHERE reg_ip = ? AND id != 1").bind(targetIp).run();
+
+				return jsonResponse({ success: true, ip: targetIp });
 			} catch (e) {
 				return handleError(e);
 			}
