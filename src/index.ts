@@ -123,7 +123,7 @@ export default {
 			}
 		}
 
-		// GET /api/me (带回勋章列表)
+		// GET /api/me
 		if (url.pathname === '/api/me' && method === 'GET') {
 			try {
 				await ensureColumns();
@@ -331,7 +331,7 @@ export default {
 			}
 		}
 
-		// GET /api/posts (返回作者的 badges 勋章列表)
+		// GET /api/posts
 		if (url.pathname === '/api/posts' && method === 'GET') {
 			try {
 				await ensureColumns();
@@ -415,7 +415,7 @@ export default {
 			}
 		}
 
-		// POST /api/posts/:id/badge
+		// POST /api/posts/:id/badge (纯粹授勋：只改标签，绝不触碰任何积分，彻底防刷！)
 		if (url.pathname.match(/^\/api\/posts\/\d+\/badge$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -425,24 +425,36 @@ export default {
 				const postId = url.pathname.split('/')[3];
 				const body = await request.json() as any;
 				const badge = body.badge || null;
-				const bonus = parseInt(body.bonus || '0');
+
+				await env.cforum_db.prepare('UPDATE posts SET badge = ? WHERE id = ?').bind(badge, postId).run();
+				return jsonResponse({ success: true, badge });
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// POST /api/posts/:id/reward (独立站长打赏接口：专款专用，加多少站长说了算！)
+		if (url.pathname.match(/^\/api\/posts\/\d+\/reward$/) && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
+
+				await ensureColumns();
+				const postId = url.pathname.split('/')[3];
+				const body = await request.json() as any;
+				const amount = parseInt(body.amount);
+
+				if (isNaN(amount) || amount <= 0) return jsonResponse({ error: '请输入大于0的奖励积分' }, 400);
 
 				const post = await env.cforum_db.prepare('SELECT author_id, reward_points FROM posts WHERE id = ?').bind(postId).first<{ author_id: number; reward_points: number }>();
 				if (!post) return jsonResponse({ error: '帖子不存在' }, 404);
 
-				const newRewardTotal = Math.max(0, (post.reward_points || 0) + bonus);
+				// 累计该帖获赏总额并打入作者账户
+				await env.cforum_db.prepare('UPDATE posts SET reward_points = COALESCE(reward_points, 0) + ? WHERE id = ?').bind(amount, postId).run();
+				await env.cforum_db.prepare('UPDATE users SET points = COALESCE(points, 0) + ? WHERE id = ?').bind(amount, post.author_id).run();
 
-				await env.cforum_db.prepare(
-					'UPDATE posts SET badge = ?, reward_points = ? WHERE id = ?'
-				).bind(badge, badge ? newRewardTotal : 0, postId).run();
-
-				if (bonus > 0) {
-					await env.cforum_db.prepare(
-						'UPDATE users SET points = COALESCE(points, 0) + ? WHERE id = ?'
-					).bind(bonus, post.author_id).run();
-				}
-
-				return jsonResponse({ success: true, badge, bonus });
+				const updated = await env.cforum_db.prepare('SELECT reward_points FROM posts WHERE id = ?').bind(postId).first<{ reward_points: number }>();
+				return jsonResponse({ success: true, total_reward: updated?.reward_points ?? 0 });
 			} catch (e) {
 				return handleError(e);
 			}
@@ -684,7 +696,7 @@ export default {
 			}
 		}
 
-		// POST /api/admin/users/:id/badges (站长神权：给用户授予或收回专属荣誉勋章！)
+		// 站长给指定用户授予/收回勋章
 		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/badges$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -705,6 +717,7 @@ export default {
 			}
 		}
 
+		// 站长调分接口
 		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/points$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
