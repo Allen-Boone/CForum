@@ -158,7 +158,7 @@ export function IndexPage() {
 	const token = getToken();
 	const [user, setCurrentUser] = React.useState(() => getUser());
 	const [selectedCategory, setSelectedCategory] = React.useState<string>('all');
-	const [posts, setPosts] = React.useState<Array<Post & { badge?: string | null; reward_points?: number; author_badges?: string }>>([]);
+	const [posts, setPosts] = React.useState<Array<Post & { badge?: string | null; reward_points?: number; author_badges?: string; is_pinned?: number }>>([]);
 	const [loading, setLoading] = React.useState<boolean>(true);
 
 	const [activeTab, setActiveTab] = React.useState<'latest_reply' | 'latest_post' | 'featured' | 'recommend' | 'original'>('latest_reply');
@@ -190,7 +190,6 @@ export function IndexPage() {
 	const avatarInputRef = React.useRef<HTMLInputElement>(null);
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
-	// 小黑屋前台弹窗状态
 	const [blackhouseOpen, setBlackhouseOpen] = React.useState(false);
 	const [blackhouseList, setBlackhouseList] = React.useState<Array<{ id: number; username: string; reason: string; duration: string; created_at: string }>>([]);
 
@@ -434,7 +433,11 @@ export function IndexPage() {
 				body: JSON.stringify({ title: newTitle, content: newContent, category_id: Number(newCategoryId) || 1 })
 			});
 			if (pinOnCreate && res?.id && user?.role === 'admin') {
-				await apiFetch(`/posts/${res.id}/pin`, { method: 'POST', headers: getSecurityHeaders('POST') }).catch(() => {});
+				await apiFetch(`/posts/${res.id}/pin`, {
+					method: 'POST',
+					headers: getSecurityHeaders('POST'),
+					body: JSON.stringify({ weight: 99 })
+				}).catch(() => {});
 			}
 			setNewTitle('');
 			setNewContent('');
@@ -448,9 +451,23 @@ export function IndexPage() {
 		}
 	}
 
-	async function handleTogglePin(postId: number) {
+	// 核心亮点：站长设置置顶权重（99 = 超级最高置顶霸占第1行，2/1 = 普通置顶，0 = 取消）
+	async function handleTogglePin(postId: number, currentPin?: number) {
+		const input = prompt(
+			`【站长设置帖子置顶权重】\n当前状态：${(currentPin && currentPin > 0) ? `已置顶 (权重 ${currentPin})` : '未置顶'}\n\n请输入置顶权重：\n• 输入 99 = 超级最高置顶（永远霸占第 1 位，适合总公告）\n• 输入 2 = 次级置顶\n• 输入 1 = 普通置顶\n• 输入 0 = 取消置顶`,
+			(currentPin && currentPin > 0) ? '0' : '99'
+		);
+		if (input === null) return;
+		const weight = parseInt(input.trim());
+		if (isNaN(weight) || weight < 0) return alert('请输入大于等于 0 的有效整数！');
+
 		try {
-			await apiFetch(`/posts/${postId}/pin`, { method: 'POST', headers: getSecurityHeaders('POST') });
+			await apiFetch(`/posts/${postId}/pin`, {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify({ weight })
+			});
+			alert(weight > 0 ? `📌 置顶权重已设置为 ${weight}！` : '已取消置顶！');
 			loadPosts();
 		} catch (err: any) {
 			alert('操作失败: ' + err.message);
@@ -710,7 +727,7 @@ export function IndexPage() {
 									</span>
 									{isAdmin && (
 										<label className="flex items-center gap-1.5 text-xs text-amber-400 cursor-pointer">
-											<input type="checkbox" checked={pinOnCreate} onChange={e => setPinOnCreate(e.target.checked)} /> 📌 直接设为全站置顶帖
+											<input type="checkbox" checked={pinOnCreate} onChange={e => setPinOnCreate(e.target.checked)} /> 📌 直接设为超级置顶（权重99）
 										</label>
 									)}
 								</div>
@@ -746,6 +763,8 @@ export function IndexPage() {
 							) : (
 								filteredPosts.map(post => {
 									const postAuthorBadges = parseBadges(post.author_badges);
+									const isPinned = (post.is_pinned ?? 0) > 0;
+
 									return (
 										<div key={post.id} className="p-4 hover:bg-[#1c2128] transition-colors flex items-start gap-3.5 group">
 											<div className="w-11 h-11 rounded-lg bg-[#21262d] flex-shrink-0 flex items-center justify-center font-bold text-gray-300 border border-[#30363d] overflow-hidden shadow-sm">
@@ -760,9 +779,9 @@ export function IndexPage() {
 
 											<div className="flex-1 min-w-0">
 												<div className="flex items-center gap-2 flex-wrap leading-normal">
-													{post.is_pinned === 1 && (
-														<span className="bg-[#b35900] text-white text-xs font-bold px-2 py-0.5 rounded shadow-sm">
-															置顶
+													{isPinned && (
+														<span className="bg-[#b35900] text-white text-xs font-bold px-2 py-0.5 rounded shadow-sm flex items-center gap-0.5">
+															📌 置顶{(post.is_pinned ?? 0) >= 90 ? ' (首位)' : ''}
 														</span>
 													)}
 													{renderBadge(post.badge)}
@@ -770,7 +789,7 @@ export function IndexPage() {
 													<a
 														href={`/post?id=${post.id}`}
 														className={`text-[16.5px] font-semibold leading-relaxed tracking-normal group-hover:text-blue-400 transition-colors ${
-															post.is_pinned === 1
+															isPinned
 																? 'text-[#ff7b72]'
 																: post.badge
 																? 'text-amber-200'
@@ -834,10 +853,10 @@ export function IndexPage() {
 
 															<button
 																type="button"
-																onClick={() => handleTogglePin(post.id)}
+																onClick={() => handleTogglePin(post.id, post.is_pinned)}
 																className="text-[11px] text-sky-400 hover:underline flex items-center gap-0.5 font-medium"
 															>
-																<Pin className="w-3 h-3" /> {post.is_pinned === 1 ? '取消置顶' : '置顶'}
+																<Pin className="w-3 h-3" /> {isPinned ? '调置顶' : '置顶'}
 															</button>
 															<button
 																type="button"
