@@ -6,18 +6,6 @@ import { Input } from '@/components/ui/input';
 import { apiFetch, formatDate, getSecurityHeaders, type Category, type Post } from '@/lib/api';
 import { getToken, getUser, logout, setUser } from '@/lib/auth';
 
-const ALL_CATEGORIES: Category[] = [
-	{ id: 1, name: '茶水间', created_at: '' },
-	{ id: 2, name: '技术贴', created_at: '' },
-	{ id: 3, name: '问与答', created_at: '' },
-	{ id: 4, name: 'AI聊聊', created_at: '' },
-	{ id: 5, name: '副业来了', created_at: '' },
-	{ id: 6, name: '域名交流', created_at: '' },
-	{ id: 7, name: '福利发放', created_at: '' },
-	{ id: 8, name: '站长交流', created_at: '' },
-	{ id: 9, name: '公告', created_at: '' }
-];
-
 const QUICK_EMOJIS = ['😂', '👍', '🔥', '🚀', '❤️', '🎉', '☕', '💎', '💡', '😎', '🫡', '🤝', '🍺', '🥳', '💯'];
 
 const SMILEY_THEMES = [
@@ -159,6 +147,9 @@ function TimeGreetingBanner() {
 export function IndexPage() {
 	const token = getToken();
 	const [user, setCurrentUser] = React.useState(() => getUser());
+
+	// 动态实时板块列表（从后端完整读取排序）
+	const [categories, setCategories] = React.useState<Category[]>([]);
 	const [selectedCategory, setSelectedCategory] = React.useState<string>('all');
 	const [posts, setPosts] = React.useState<Array<Post & { badge?: string | null; reward_points?: number; author_badges?: string; is_pinned?: number }>>([]);
 	const [loading, setLoading] = React.useState<boolean>(true);
@@ -168,7 +159,7 @@ export function IndexPage() {
 	const [showEditor, setShowEditor] = React.useState<boolean>(false);
 	const [newTitle, setNewTitle] = React.useState('');
 	const [newContent, setNewContent] = React.useState('');
-	const [newCategoryId, setNewCategoryId] = React.useState<string>(() => user?.role === 'admin' ? '9' : '1');
+	const [newCategoryId, setNewCategoryId] = React.useState<string>('1');
 	const [pinOnCreate, setPinOnCreate] = React.useState<boolean>(false);
 	const [showEmojiPicker, setShowEmojiPicker] = React.useState<boolean>(false);
 
@@ -215,6 +206,16 @@ export function IndexPage() {
 		} catch (_) {}
 	}, []);
 
+	const loadCategories = React.useCallback(async () => {
+		try {
+			const cats = await apiFetch<Category[]>('/categories');
+			if (cats && cats.length > 0) {
+				setCategories(cats);
+				setNewCategoryId(String(cats[0].id));
+			}
+		} catch (_) {}
+	}, []);
+
 	React.useEffect(() => {
 		function handleScroll() {
 			setShowBackToTop(window.scrollY > 200);
@@ -229,6 +230,7 @@ export function IndexPage() {
 
 	React.useEffect(() => {
 		loadStats();
+		loadCategories();
 
 		if (token) {
 			(async () => {
@@ -252,7 +254,7 @@ export function IndexPage() {
 		} else {
 			setLoading(false);
 		}
-	}, [token, loadStats]);
+	}, [token, loadStats, loadCategories]);
 
 	async function loadPosts() {
 		setLoading(true);
@@ -388,7 +390,6 @@ export function IndexPage() {
 		}
 	}
 
-	// 核心亮点：智能选区包裹 Markdown 快捷编辑函数
 	function insertMarkdownTag(prefix: string, suffix: string = '', defaultPlaceholder: string = '') {
 		const textarea = textareaRef.current;
 		if (!textarea) return;
@@ -578,17 +579,14 @@ export function IndexPage() {
 	}
 
 	async function handleMoveCategory(postId: number, currentTitle: string) {
-		const menu = ALL_CATEGORIES.map(c => `${c.id} = ${c.name}`).join('\n');
+		const menu = categories.map(c => `${c.id} = ${c.name}`).join('\n');
 		const input = prompt(
 			`【站长移动帖子板块】\n当前帖子：《${currentTitle}》\n\n请选择要移入的新板块编号：\n${menu}`,
 			'1'
 		);
 		if (!input) return;
 		const targetCatId = parseInt(input.trim());
-		if (isNaN(targetCatId) || targetCatId < 1 || targetCatId > 9) {
-			alert('请输入 1 ~ 9 之间的有效板块编号！');
-			return;
-		}
+		if (isNaN(targetCatId)) return alert('请输入有效的板块编号！');
 
 		try {
 			await apiFetch(`/admin/posts/${postId}/move`, {
@@ -596,7 +594,7 @@ export function IndexPage() {
 				headers: getSecurityHeaders('POST'),
 				body: JSON.stringify({ category_id: targetCatId })
 			});
-			const targetName = ALL_CATEGORIES.find(c => c.id === targetCatId)?.name;
+			const targetName = categories.find(c => c.id === targetCatId)?.name;
 			alert(`🎉 移动成功！帖子已成功移入【${targetName}】板块！`);
 			loadPosts();
 		} catch (err: any) {
@@ -634,11 +632,13 @@ export function IndexPage() {
 	}
 
 	const isAdmin = user?.role === 'admin';
+	// 发帖选项：普通会员隐藏公告(9)，站长全选
 	const selectableCategories = isAdmin
-		? ALL_CATEGORIES
-		: ALL_CATEGORIES.filter(c => c.id !== 9);
+		? categories
+		: categories.filter(c => c.id !== 9);
 
-	const navPills = [{ id: 'all', name: '全部主题' }, ...ALL_CATEGORIES.map(c => ({ id: String(c.id), name: c.name }))];
+	// 首页导航药丸：完全按照数据库中的动态顺序渲染！
+	const navPills = [{ id: 'all', name: '全部主题' }, ...categories.map(c => ({ id: String(c.id), name: c.name }))];
 
 	const filteredPosts = posts.filter(p => {
 		if (activeTab === 'featured' && p.badge !== '精华' && p.badge !== '神帖') return false;
@@ -650,7 +650,7 @@ export function IndexPage() {
 
 	function getCategoryName(catId: number | null | undefined, fallback?: string | null) {
 		if (fallback) return fallback;
-		return ALL_CATEGORIES.find(c => c.id === Number(catId))?.name || '茶水间';
+		return categories.find(c => c.id === Number(catId))?.name || '茶水间';
 	}
 
 	const allRealUsers = commStats.latest_users || [];
@@ -669,6 +669,7 @@ export function IndexPage() {
 
 	return (
 		<PageShell>
+			{/* 动态板块导航条：顺序完全由站长在后台掌控！ */}
 			<div className="flex flex-wrap items-center gap-2 mb-3">
 				{navPills.map(pill => (
 					<button
@@ -742,7 +743,7 @@ export function IndexPage() {
 						)}
 					</div>
 
-					{/* 发帖编辑器（带 1:1 像素级复刻的富文本工具条） */}
+					{/* 发帖编辑器 */}
 					{showEditor && user && (
 						<form onSubmit={handleCreatePost} className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 space-y-3">
 							<div className="flex gap-2">
@@ -760,7 +761,6 @@ export function IndexPage() {
 								<Input placeholder="标题：请用一句话说清你的主题" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="bg-[#0d1117] border-[#30363d] text-white text-sm" />
 							</div>
 
-							{/* 核心亮点：1:1 像素级复刻的 Markdown 快捷编辑工具条 */}
 							<div className="border border-[#30363d] rounded-md overflow-hidden bg-[#0d1117]">
 								<div className="flex items-center gap-1 p-1.5 bg-[#161b22] border-b border-[#30363d] flex-wrap text-gray-300 text-xs select-none">
 									<div className="relative">
