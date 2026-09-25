@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiFetch, getSecurityHeaders, type Category } from '@/lib/api';
 import { getToken, getUser } from '@/lib/auth';
-import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown, ArrowUpDown, Gavel, Hammer, Plus, Trash2, FolderKanban, ChevronLeft, ChevronRight, ArrowLeftRight } from 'lucide-react';
+import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown, ArrowUpDown, Gavel, Hammer, Plus, Trash2, FolderKanban, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface SiteBadge {
 	id: number;
@@ -98,7 +98,6 @@ export function AdminPage() {
 		refresh();
 	}, [refresh]);
 
-	// 核心亮点：站长前移/后移板块（一键交换位置）
 	async function handleMoveOrder(index: number, direction: 'left' | 'right') {
 		const targetIndex = direction === 'left' ? index - 1 : index + 1;
 		if (targetIndex < 0 || targetIndex >= categories.length) return;
@@ -109,7 +108,6 @@ export function AdminPage() {
 		const currentOrder = current.sort_order ?? current.id;
 		const neighborOrder = neighbor.sort_order ?? neighbor.id;
 
-		// 如果当前两者的 order 碰巧一样，强制拉开间距
 		const newCurrentOrder = neighborOrder;
 		const newNeighborOrder = currentOrder === neighborOrder ? neighborOrder + 1 : currentOrder;
 
@@ -132,7 +130,6 @@ export function AdminPage() {
 		}
 	}
 
-	// 核心亮点：直接输入数字自定义排序权重
 	async function handleCustomSort(catId: number, catName: string, currentOrder: number) {
 		const input = prompt(
 			`【自定义板块排序编号】\n板块：《${catName}》\n当前排序编号：${currentOrder}\n\n请输入新的排序序号（数字越小越靠前，如输入 1 排在最前面）：`,
@@ -438,21 +435,21 @@ export function AdminPage() {
 	function renderRoleBadge(role: string) {
 		switch (role) {
 			case 'admin':
-				return <span className="bg-amber-900/40 text-amber-300 border border-amber-800 px-2 py-0.5 rounded text-[11px] font-bold">👑 站长管理员</span>;
+				return <span className="bg-amber-900/40 text-amber-300 border border-amber-800 px-2 py-0.5 rounded text-[11px] font-bold whitespace-nowrap">👑 站长管理员</span>;
 			case 'moderator':
-				return <span className="bg-purple-900/40 text-purple-300 border border-purple-800 px-2 py-0.5 rounded text-[11px] font-bold">🛡️ 社区版主</span>;
+				return <span className="bg-purple-900/40 text-purple-300 border border-purple-800 px-2 py-0.5 rounded text-[11px] font-bold whitespace-nowrap">🛡️ 社区版主</span>;
 			case 'elder':
-				return <span className="bg-orange-900/40 text-orange-300 border border-orange-800 px-2 py-0.5 rounded text-[11px] font-bold">🔥 核心元老</span>;
+				return <span className="bg-orange-900/40 text-orange-300 border border-orange-800 px-2 py-0.5 rounded text-[11px] font-bold whitespace-nowrap">🔥 核心元老</span>;
 			case 'vip':
-				return <span className="bg-yellow-900/40 text-yellow-300 border border-yellow-800 px-2 py-0.5 rounded text-[11px] font-bold">💎 尊贵VIP</span>;
+				return <span className="bg-yellow-900/40 text-yellow-300 border border-yellow-800 px-2 py-0.5 rounded text-[11px] font-bold whitespace-nowrap">💎 尊贵VIP</span>;
 			case 'pro':
-				return <span className="bg-cyan-900/40 text-cyan-300 border border-cyan-800 px-2 py-0.5 rounded text-[11px] font-bold">💻 认证极客</span>;
+				return <span className="bg-cyan-900/40 text-cyan-300 border border-cyan-800 px-2 py-0.5 rounded text-[11px] font-bold whitespace-nowrap">💻 认证极客</span>;
 			case 'active':
-				return <span className="bg-emerald-900/40 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded text-[11px] font-bold">⭐ 活跃会员</span>;
+				return <span className="bg-emerald-900/40 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded text-[11px] font-bold whitespace-nowrap">⭐ 活跃会员</span>;
 			case 'banned':
-				return <span className="bg-red-900/50 text-red-300 border border-red-700 px-2 py-0.5 rounded text-[11px] font-bold">⚖️ 小黑屋服刑</span>;
+				return <span className="bg-red-900/50 text-red-300 border border-red-700 px-2 py-0.5 rounded text-[11px] font-bold whitespace-nowrap">⚖️ 小黑屋服刑</span>;
 			default:
-				return <span className="bg-gray-800 text-gray-400 border border-gray-700 px-2 py-0.5 rounded text-[11px]">🌱 普通会员</span>;
+				return <span className="bg-gray-800 text-gray-400 border border-gray-700 px-2 py-0.5 rounded text-[11px] whitespace-nowrap">🌱 普通会员</span>;
 		}
 	}
 
@@ -532,7 +529,7 @@ export function AdminPage() {
 					</Card>
 				</div>
 
-				{/* 核心亮点：全站板块自由排序、改名、删除管理卡片 */}
+				{/* 社区板块分类与自由排序管理 */}
 				<Card className="bg-[#161b22] border-[#30363d]">
 					<CardHeader className="py-3 px-4 border-b border-[#30363d] flex flex-row items-center justify-between">
 						<CardTitle className="text-sm text-white flex items-center gap-1.5">
@@ -541,7 +538,6 @@ export function AdminPage() {
 						</CardTitle>
 					</CardHeader>
 					<CardContent className="p-4 space-y-4">
-						{/* 添加新板块表单 */}
 						<form onSubmit={handleCreateCategory} className="flex gap-2 max-w-md">
 							<input
 								type="text"
@@ -555,7 +551,6 @@ export function AdminPage() {
 							</Button>
 						</form>
 
-						{/* 自由调序板块列表（按顺序排列，带左右箭头和数字调整） */}
 						<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
 							{categories.map((c, idx) => (
 								<div key={c.id} className="p-3 rounded-lg border border-[#30363d] bg-[#0d1117] flex items-center justify-between gap-2 text-xs">
@@ -572,7 +567,6 @@ export function AdminPage() {
 									</div>
 
 									<div className="flex items-center gap-1 flex-shrink-0">
-										{/* 一键前移箭头 */}
 										<button
 											type="button"
 											disabled={idx === 0}
@@ -583,7 +577,6 @@ export function AdminPage() {
 											<ChevronLeft className="w-3.5 h-3.5" />
 										</button>
 
-										{/* 一键后移箭头 */}
 										<button
 											type="button"
 											disabled={idx === categories.length - 1}
@@ -620,7 +613,7 @@ export function AdminPage() {
 					</CardContent>
 				</Card>
 
-				{/* 会员列表与管理操作 */}
+				{/* 会员列表与管理操作（核心加固：采用 table-auto 与强制截断，杜绝任何超长字符串撑爆表格！） */}
 				<Card className="bg-[#161b22] border-[#30363d]">
 					<CardHeader className="py-3 px-4 border-b border-[#30363d] flex flex-row items-center justify-between">
 						<CardTitle className="text-sm text-white flex items-center gap-1.5">
@@ -638,15 +631,15 @@ export function AdminPage() {
 						</Button>
 					</CardHeader>
 					<CardContent className="p-0 overflow-x-auto">
-						<table className="w-full text-xs text-left text-gray-300">
+						<table className="w-full text-xs text-left text-gray-300 min-w-[700px]">
 							<thead className="bg-[#0d1117] text-gray-400 border-b border-[#30363d]">
 								<tr>
 									<th className="py-2.5 px-4 w-16 text-center">序号</th>
-									<th className="py-2.5 px-4">用户名</th>
-									<th className="py-2.5 px-4">邮箱</th>
+									<th className="py-2.5 px-4 max-w-[180px]">用户名</th>
+									<th className="py-2.5 px-4 max-w-[200px]">邮箱</th>
 									<th className="py-2.5 px-4">称号与勋章</th>
-									<th className="py-2.5 px-4">当前积分</th>
-									<th className="py-2.5 px-4">角色等级身份</th>
+									<th className="py-2.5 px-4 w-20">当前积分</th>
+									<th className="py-2.5 px-4 w-28">角色等级身份</th>
 									<th className="py-2.5 px-4 text-right">站长管理操作</th>
 								</tr>
 							</thead>
@@ -660,32 +653,40 @@ export function AdminPage() {
 											<td className="py-3 px-4 text-center font-mono font-bold text-gray-400">
 												#{sequenceNumber}
 											</td>
-											<td className="py-3 px-4 font-bold text-white flex items-center gap-1.5">
-												<span className={u.username === '已注销用户' ? 'text-gray-500 italic' : ''}>
+											{/* 核心防护：设置最大宽度和强制截断，超过 15 个字符自动省略号，彻底杜绝撑破表格！ */}
+											<td className="py-3 px-4 font-bold text-white max-w-[180px]">
+												<span
+													title={u.username}
+													className={`block truncate max-w-[160px] ${u.username === '已注销用户' ? 'text-gray-500 italic' : ''}`}
+												>
 													{u.username}
 												</span>
 											</td>
-											<td className="py-3 px-4 text-gray-400 font-mono">{u.email}</td>
+											<td className="py-3 px-4 text-gray-400 font-mono max-w-[200px]">
+												<span title={u.email} className="block truncate max-w-[180px]">
+													{u.email}
+												</span>
+											</td>
 											<td className="py-3 px-4 space-y-1.5">
 												<div>
-													<span className="bg-blue-950/60 text-blue-300 border border-blue-800/60 px-1.5 py-0.5 rounded text-[11px]">
+													<span className="bg-blue-950/60 text-blue-300 border border-blue-800/60 px-1.5 py-0.5 rounded text-[11px] whitespace-nowrap">
 														{u.title || '🌱 初来乍到'}
 													</span>
 												</div>
 												{userBadges.length > 0 && (
 													<div className="flex flex-wrap gap-1">
 														{userBadges.map((b, bi) => (
-															<span key={bi} className="bg-amber-500/15 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded text-[10px] font-bold">
-												{b}
-											</span>
+															<span key={bi} className="bg-amber-500/15 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded text-[10px] font-bold whitespace-nowrap">
+																{b}
+															</span>
 														))}
 													</div>
 												)}
 											</td>
-											<td className="py-3 px-4 font-bold text-yellow-400">
+											<td className="py-3 px-4 font-bold text-yellow-400 whitespace-nowrap">
 												✨ {u.points ?? 0}
 											</td>
-											<td className="py-3 px-4">
+											<td className="py-3 px-4 whitespace-nowrap">
 												<button
 													type="button"
 													onClick={() => handleSetRole(u.id, u.username, u.role)}
@@ -695,8 +696,8 @@ export function AdminPage() {
 													{renderRoleBadge(u.role)}
 												</button>
 											</td>
-											<td className="py-3 px-4 text-right">
-												<div className="flex items-center justify-end gap-1.5 flex-wrap">
+											<td className="py-3 px-4 text-right whitespace-nowrap">
+												<div className="flex items-center justify-end gap-1.5 flex-nowrap">
 													{u.id !== 1 && (
 														<Button
 															size="sm"
