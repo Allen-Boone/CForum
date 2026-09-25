@@ -10,6 +10,7 @@ interface DBUser {
     avatar_url?: string;
     points?: number;
     title?: string;
+    badges?: string;
     last_checkin_date?: string;
 }
 
@@ -79,9 +80,10 @@ export default {
 			return jsonResponse({ error: errString }, 500);
 		};
 
-		const ensurePostColumns = async () => {
+		const ensureColumns = async () => {
 			await env.cforum_db.prepare('ALTER TABLE posts ADD COLUMN badge TEXT').run().catch(() => {});
 			await env.cforum_db.prepare('ALTER TABLE posts ADD COLUMN reward_points INTEGER DEFAULT 0').run().catch(() => {});
+			await env.cforum_db.prepare("ALTER TABLE users ADD COLUMN badges TEXT DEFAULT '[]'").run().catch(() => {});
 		};
 
 		// GET /api/config
@@ -102,11 +104,12 @@ export default {
 		// GET /api/community-stats
 		if (url.pathname === '/api/community-stats' && method === 'GET') {
 			try {
+				await ensureColumns();
 				const [userCount, postCount, commentCount, latestUsers] = await Promise.all([
 					env.cforum_db.prepare('SELECT COUNT(*) as count FROM users').first<number>('count'),
 					env.cforum_db.prepare('SELECT COUNT(*) as count FROM posts').first<number>('count'),
 					env.cforum_db.prepare('SELECT COUNT(*) as count FROM comments').first<number>('count'),
-					env.cforum_db.prepare('SELECT id, username, avatar_url, role, title FROM users ORDER BY id DESC LIMIT 16').all()
+					env.cforum_db.prepare('SELECT id, username, avatar_url, role, title, badges FROM users ORDER BY id DESC LIMIT 16').all()
 				]);
 
 				return jsonResponse({
@@ -120,12 +123,13 @@ export default {
 			}
 		}
 
-		// GET /api/me
+		// GET /api/me (带回勋章列表)
 		if (url.pathname === '/api/me' && method === 'GET') {
 			try {
+				await ensureColumns();
 				const userPayload = await authenticate(request);
 				const user = await env.cforum_db.prepare(
-					'SELECT id, username, email, role, avatar_url, points, title, last_checkin_date FROM users WHERE id = ?'
+					'SELECT id, username, email, role, avatar_url, points, title, badges, last_checkin_date FROM users WHERE id = ?'
 				).bind(userPayload.id).first<DBUser>();
 
 				if (!user) return jsonResponse({ error: 'User not found' }, 404);
@@ -139,6 +143,7 @@ export default {
 					avatar_url: user.avatar_url,
 					points: user.points ?? 0,
 					title: user.title || '🌱 初来乍到',
+					badges: user.badges ? JSON.parse(user.badges) : [],
 					checked_in_today: user.last_checkin_date === today
 				});
 			} catch (e) {
@@ -165,7 +170,7 @@ export default {
 			}
 		}
 
-		// DELETE /api/user/self (来去自由：用户自主彻底注销账号并物理抹除全部痕迹！)
+		// DELETE /api/user/self
 		if (url.pathname === '/api/user/self' && method === 'DELETE') {
 			try {
 				const userPayload = await authenticate(request);
@@ -190,6 +195,7 @@ export default {
 		// POST /api/register
 		if (url.pathname === '/api/register' && method === 'POST') {
 			try {
+				await ensureColumns();
 				const body = await request.json() as any;
 				const email = String(body.email || '').trim();
 				const username = String(body.username || '').trim();
@@ -209,7 +215,7 @@ export default {
 				const passwordHash = await hashPassword(password);
 
 				const { success, meta } = await env.cforum_db.prepare(
-					'INSERT INTO users (email, username, password, role, verified, points, title) VALUES (?, ?, ?, ?, 1, 0, ?)'
+					"INSERT INTO users (email, username, password, role, verified, points, title, badges) VALUES (?, ?, ?, ?, 1, 0, ?, '[]')"
 				).bind(email, username, passwordHash, 'user', '🌱 初来乍到').run();
 
 				if (!success) return jsonResponse({ error: '注册失败' }, 500);
@@ -235,6 +241,7 @@ export default {
 						role: 'user',
 						points: 0,
 						title: '🌱 初来乍到',
+						badges: [],
 						checked_in_today: false
 					}
 				}, 201);
@@ -246,6 +253,7 @@ export default {
 		// POST /api/login
 		if (url.pathname === '/api/login' && method === 'POST') {
 			try {
+				await ensureColumns();
 				const body = await request.json() as any;
 				const account = String(body.email || body.username || '').trim();
 				const password = String(body.password || '').trim();
@@ -253,7 +261,7 @@ export default {
 				if (!account || !password) return jsonResponse({ error: '请输入账号和密码' }, 400);
 
 				const user = await env.cforum_db.prepare(
-					'SELECT id, username, email, password, verified, role, avatar_url, points, title, last_checkin_date FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)'
+					'SELECT id, username, email, password, verified, role, avatar_url, points, title, badges, last_checkin_date FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)'
 				).bind(account, account).first<DBUser>();
 
 				if (!user) return jsonResponse({ error: '账号不存在，请先注册' }, 401);
@@ -283,6 +291,7 @@ export default {
 						avatar_url: user.avatar_url,
 						points: user.points ?? 0,
 						title: user.title || '🌱 初来乍到',
+						badges: user.badges ? JSON.parse(user.badges) : [],
 						checked_in_today: user.last_checkin_date === today
 					}
 				});
@@ -322,10 +331,10 @@ export default {
 			}
 		}
 
-		// GET /api/posts
+		// GET /api/posts (返回作者的 badges 勋章列表)
 		if (url.pathname === '/api/posts' && method === 'GET') {
 			try {
-				await ensurePostColumns();
+				await ensureColumns();
 				const limit = parseInt(url.searchParams.get('limit') || '50');
 				const offset = parseInt(url.searchParams.get('offset') || '0');
 				const categoryId = url.searchParams.get('category_id');
@@ -335,7 +344,7 @@ export default {
 						p.id, p.author_id, p.title, p.content, p.category_id, p.is_pinned,
 						p.badge, COALESCE(p.reward_points, 0) as reward_points,
 						COALESCE(p.views, 0) as view_count, p.created_at,
-						u.username as author_name, u.avatar_url as author_avatar, u.role as author_role, u.title as author_title,
+						u.username as author_name, u.avatar_url as author_avatar, u.role as author_role, u.title as author_title, u.badges as author_badges,
 						c.name as category_name,
 						(SELECT COUNT(*) FROM comments WHERE post_id = p.id) as comment_count,
 						(SELECT COUNT(*) FROM likes WHERE post_id = p.id) as like_count
@@ -412,7 +421,7 @@ export default {
 				const userPayload = await authenticate(request);
 				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
 
-				await ensurePostColumns();
+				await ensureColumns();
 				const postId = url.pathname.split('/')[3];
 				const body = await request.json() as any;
 				const badge = body.badge || null;
@@ -442,7 +451,7 @@ export default {
 		// GET /api/posts/:id
 		if (url.pathname.match(/^\/api\/posts\/\d+$/) && method === 'GET') {
 			try {
-				await ensurePostColumns();
+				await ensureColumns();
 				const postId = url.pathname.split('/')[3];
 				await env.cforum_db.prepare('UPDATE posts SET views = COALESCE(views, 0) + 1 WHERE id = ?').bind(postId).run();
 
@@ -451,7 +460,7 @@ export default {
 						p.id, p.author_id, p.title, p.content, p.category_id, p.is_pinned,
 						p.badge, COALESCE(p.reward_points, 0) as reward_points,
 						COALESCE(p.views, 0) as view_count, p.created_at,
-						u.username as author_name, u.avatar_url as author_avatar, u.role as author_role, u.title as author_title,
+						u.username as author_name, u.avatar_url as author_avatar, u.role as author_role, u.title as author_title, u.badges as author_badges,
 						c.name as category_name,
 						(SELECT COUNT(*) FROM comments WHERE post_id = p.id) as comment_count,
 						(SELECT COUNT(*) FROM likes WHERE post_id = p.id) as like_count
@@ -475,7 +484,7 @@ export default {
 				const comments = await env.cforum_db.prepare(`
 					SELECT 
 						c.id, c.post_id, c.parent_id, c.author_id, c.content, c.created_at,
-						u.username, u.avatar_url, u.role, u.title
+						u.username, u.avatar_url, u.role, u.title, u.badges
 					FROM comments c
 					LEFT JOIN users u ON c.author_id = u.id
 					WHERE c.post_id = ?
@@ -662,13 +671,35 @@ export default {
 
 		if (url.pathname === '/api/admin/users' && method === 'GET') {
 			try {
+				await ensureColumns();
 				const userPayload = await authenticate(request);
 				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
 
 				const users = await env.cforum_db.prepare(
-					'SELECT id, email, username, role, verified, created_at, avatar_url, points, title FROM users ORDER BY id DESC'
+					'SELECT id, email, username, role, verified, created_at, avatar_url, points, title, badges FROM users ORDER BY id DESC'
 				).all();
 				return jsonResponse(users.results);
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// POST /api/admin/users/:id/badges (站长神权：给用户授予或收回专属荣誉勋章！)
+		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/badges$/) && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
+
+				await ensureColumns();
+				const targetUserId = url.pathname.split('/')[4];
+				const body = await request.json() as any;
+				const badgesArray = Array.isArray(body.badges) ? body.badges : [];
+
+				await env.cforum_db.prepare(
+					'UPDATE users SET badges = ? WHERE id = ?'
+				).bind(JSON.stringify(badgesArray), targetUserId).run();
+
+				return jsonResponse({ success: true, badges: badgesArray });
 			} catch (e) {
 				return handleError(e);
 			}
