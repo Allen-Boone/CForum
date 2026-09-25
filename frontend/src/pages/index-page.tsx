@@ -162,7 +162,6 @@ export function IndexPage() {
 	const [posts, setPosts] = React.useState<Array<Post & { badge?: string | null; reward_points?: number; author_badges?: string }>>([]);
 	const [loading, setLoading] = React.useState<boolean>(true);
 
-	// 核心升级：前置【最新回复】与【最新发布】，并独立单列【站长推荐】！
 	const [activeTab, setActiveTab] = React.useState<'latest_reply' | 'latest_post' | 'featured' | 'recommend' | 'original'>('latest_reply');
 
 	const [showEditor, setShowEditor] = React.useState<boolean>(false);
@@ -174,7 +173,8 @@ export function IndexPage() {
 	const [points, setPoints] = React.useState<number>(() => (user as any)?.points ?? 0);
 	const [userTitle, setUserTitle] = React.useState<string>(() => {
 		const raw = (user as any)?.title;
-		if (!raw || raw.includes('创始站长')) return user?.role === 'admin' ? '👑 站长' : '🌱 初来乍到';
+		if (user?.role === 'admin') return '👑 站长';
+		if (!raw || raw.includes('站长')) return '🌱 初来乍到';
 		return raw;
 	});
 	const [userBadges, setUserBadges] = React.useState<string[]>(() => {
@@ -218,9 +218,7 @@ export function IndexPage() {
 				try {
 					const fresh = await apiFetch<any>('/me', { headers: getSecurityHeaders('GET') });
 					if (fresh && fresh.id) {
-						const fixedTitle = (!fresh.title || fresh.title.includes('创始站长'))
-							? (fresh.role === 'admin' ? '👑 站长' : '🌱 初来乍到')
-							: fresh.title;
+						const fixedTitle = fresh.role === 'admin' ? '👑 站长' : (fresh.title?.includes('站长') ? '🌱 初来乍到' : fresh.title);
 						setPoints(fresh.points ?? 0);
 						setUserTitle(fixedTitle);
 						setUserBadges(Array.isArray(fresh.badges) ? fresh.badges : []);
@@ -272,11 +270,20 @@ export function IndexPage() {
 		}
 	}
 
+	// 核心修复：只有管理员能选【👑 站长】，普通会员只能选正常称号！
 	async function handleSwitchTitle() {
-		const titles = ['👑 站长', '🐉 传说之龙', '⭐ 论坛之星', '🌏 正式成员', '🌱 初来乍到'];
-		const next = prompt('请选择或输入你想佩戴的称号：\n' + titles.join('、'), userTitle);
+		const isAdmin = user?.role === 'admin';
+		const availableTitles = isAdmin
+			? ['👑 站长', '🐉 传说之龙', '⭐ 论坛之星', '🌏 正式成员', '🌱 初来乍到']
+			: ['🐉 传说之龙', '⭐ 论坛之星', '🌏 正式成员', '🌱 初来乍到'];
+
+		const next = prompt(`请选择或输入你想佩戴的称号：\n${availableTitles.join('、')}`, userTitle);
 		if (next) {
 			const trimmed = next.trim();
+			if (!isAdmin && (trimmed.includes('站长') || trimmed.includes('管理员') || trimmed.includes('官方'))) {
+				alert('❌ 站长与官方专属称号仅限总管理员佩戴！');
+				return;
+			}
 			setUserTitle(trimmed);
 			if (user) {
 				const updated = { ...user, title: trimmed } as any;
@@ -347,7 +354,7 @@ export function IndexPage() {
 				headers: getSecurityHeaders('DELETE')
 			});
 			logout();
-			alert('🚪 您的账号及所有数据已从自由论坛彻底抹除，未留任何痕迹。\n\n山水有相逢，祝您前程似锦，自由论坛随时欢迎您再次归来！');
+			alert('🚪 您的账号已注销完毕，感谢相伴！\n\n自由论坛随时欢迎您再次归来！');
 			window.location.href = '/';
 		} catch (err: any) {
 			alert('注销失败：' + err.message);
@@ -526,7 +533,6 @@ export function IndexPage() {
 
 	const navPills = [{ id: 'all', name: '全部主题' }, ...DEFAULT_CATEGORIES.map(c => ({ id: String(c.id), name: c.name }))];
 
-	// 五大独立专区筛选
 	const filteredPosts = posts.filter(p => {
 		if (activeTab === 'featured' && p.badge !== '精华' && p.badge !== '神帖') return false;
 		if (activeTab === 'recommend' && p.badge !== '推荐') return false;
@@ -565,7 +571,6 @@ export function IndexPage() {
 
 			<div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
 				<div className="lg:col-span-9 space-y-4">
-					{/* 核心升级：前置【最新回复】+【最新发布】，并独立单列【🔥 站长推荐】！ */}
 					<div className="flex items-center justify-between border-b border-[#30363d] pb-2 flex-wrap gap-2">
 						<div className="flex items-center gap-4 text-xs font-semibold flex-wrap">
 							<button
@@ -586,7 +591,6 @@ export function IndexPage() {
 								<Zap className="w-3.5 h-3.5 text-yellow-400" /> 最新发布
 							</button>
 
-							{/* 独立专区：站长推荐 */}
 							<button
 								onClick={() => setActiveTab('recommend')}
 								className={`pb-1 flex items-center gap-1 transition-colors ${
