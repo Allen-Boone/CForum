@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { apiFetch, formatDate, getSecurityHeaders, type Category, type Post } from '@/lib/api';
 import { getToken, getUser, logout, setUser } from '@/lib/auth';
 
-const DEFAULT_CATEGORIES: Category[] = [
+const ALL_CATEGORIES: Category[] = [
 	{ id: 1, name: '茶水间', created_at: '' },
 	{ id: 2, name: '技术贴', created_at: '' },
 	{ id: 3, name: '问与答', created_at: '' },
@@ -157,7 +157,6 @@ function TimeGreetingBanner() {
 export function IndexPage() {
 	const token = getToken();
 	const [user, setCurrentUser] = React.useState(() => getUser());
-	const [categories, setCategories] = React.useState<Category[]>(DEFAULT_CATEGORIES);
 	const [selectedCategory, setSelectedCategory] = React.useState<string>('all');
 	const [posts, setPosts] = React.useState<Array<Post & { badge?: string | null; reward_points?: number; author_badges?: string }>>([]);
 	const [loading, setLoading] = React.useState<boolean>(true);
@@ -167,7 +166,8 @@ export function IndexPage() {
 	const [showEditor, setShowEditor] = React.useState<boolean>(false);
 	const [newTitle, setNewTitle] = React.useState('');
 	const [newContent, setNewContent] = React.useState('');
-	const [newCategoryId, setNewCategoryId] = React.useState<string>('9');
+	// 默认发帖分类：站长默认公告(9)，普通用户默认茶水间(1)
+	const [newCategoryId, setNewCategoryId] = React.useState<string>(() => user?.role === 'admin' ? '9' : '1');
 	const [pinOnCreate, setPinOnCreate] = React.useState<boolean>(false);
 
 	const [points, setPoints] = React.useState<number>(() => (user as any)?.points ?? 0);
@@ -206,15 +206,10 @@ export function IndexPage() {
 	}, []);
 
 	React.useEffect(() => {
-		async function init() {
-			try {
-				const cats = await apiFetch<Category[]>('/categories');
-				if (cats && cats.length >= 5) setCategories(cats);
-			} catch (_) {}
+		loadStats();
 
-			loadStats();
-
-			if (token) {
+		if (token) {
+			(async () => {
 				try {
 					const fresh = await apiFetch<any>('/me', { headers: getSecurityHeaders('GET') });
 					if (fresh && fresh.id) {
@@ -229,11 +224,10 @@ export function IndexPage() {
 					}
 				} catch (_) {}
 				loadPosts();
-			} else {
-				setLoading(false);
-			}
+			})();
+		} else {
+			setLoading(false);
 		}
-		init();
 	}, [token, loadStats]);
 
 	async function loadPosts() {
@@ -270,7 +264,6 @@ export function IndexPage() {
 		}
 	}
 
-	// 核心修复：只有管理员能选【👑 站长】，普通会员只能选正常称号！
 	async function handleSwitchTitle() {
 		const isAdmin = user?.role === 'admin';
 		const availableTitles = isAdmin
@@ -531,7 +524,13 @@ export function IndexPage() {
 		}
 	}
 
-	const navPills = [{ id: 'all', name: '全部主题' }, ...DEFAULT_CATEGORIES.map(c => ({ id: String(c.id), name: c.name }))];
+	// 核心权限隔离：普通会员发帖下拉框完全过滤掉【公告(9)】，只有站长能选公告！
+	const isAdmin = user?.role === 'admin';
+	const selectableCategories = isAdmin
+		? ALL_CATEGORIES
+		: ALL_CATEGORIES.filter(c => c.id !== 9);
+
+	const navPills = [{ id: 'all', name: '全部主题' }, ...ALL_CATEGORIES.map(c => ({ id: String(c.id), name: c.name }))];
 
 	const filteredPosts = posts.filter(p => {
 		if (activeTab === 'featured' && p.badge !== '精华' && p.badge !== '神帖') return false;
@@ -543,7 +542,7 @@ export function IndexPage() {
 
 	function getCategoryName(catId: number | null | undefined, fallback?: string | null) {
 		if (fallback) return fallback;
-		return DEFAULT_CATEGORIES.find(c => c.id === Number(catId))?.name || '茶水间';
+		return ALL_CATEGORIES.find(c => c.id === Number(catId))?.name || '茶水间';
 	}
 
 	const allRealUsers = commStats.latest_users || [];
@@ -629,8 +628,17 @@ export function IndexPage() {
 					{showEditor && user && (
 						<form onSubmit={handleCreatePost} className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 space-y-3">
 							<div className="flex gap-2">
-								<select value={newCategoryId} onChange={e => setNewCategoryId(e.target.value)} className="bg-[#0d1117] border border-[#30363d] text-white text-xs rounded px-2.5 py-1.5">
-									{DEFAULT_CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+								{/* 严格权限：普通会员只能选 8 个公开板块，只有站长能选【公告】 */}
+								<select
+									value={newCategoryId}
+									onChange={e => setNewCategoryId(e.target.value)}
+									className="bg-[#0d1117] border border-[#30363d] text-white text-xs rounded px-2.5 py-1.5 font-medium"
+								>
+									{selectableCategories.map(c => (
+										<option key={c.id} value={c.id}>
+											{c.id === 9 ? '📢 公告（官方专属）' : c.name}
+										</option>
+									))}
 								</select>
 								<Input placeholder="标题：请用一句话说清你的主题" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="bg-[#0d1117] border-[#30363d] text-white text-sm" />
 							</div>
@@ -662,7 +670,7 @@ export function IndexPage() {
 									<span className="text-[11px] text-gray-400 hidden sm:inline">
 										💡 提示：截图后直接在正文框按 <strong>Ctrl + V</strong> 即可秒贴图片！
 									</span>
-									{user.role === 'admin' && (
+									{isAdmin && (
 										<label className="flex items-center gap-1.5 text-xs text-amber-400 cursor-pointer">
 											<input type="checkbox" checked={pinOnCreate} onChange={e => setPinOnCreate(e.target.checked)} /> 📌 直接设为全站置顶帖
 										</label>
@@ -760,7 +768,7 @@ export function IndexPage() {
 														{getCategoryName(post.category_id, post.category_name)}
 													</span>
 
-													{user.role === 'admin' && (
+													{isAdmin && (
 														<span className="ml-auto flex items-center gap-2.5">
 															<button
 																type="button"
