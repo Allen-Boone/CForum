@@ -2282,4 +2282,1463 @@ export default {
 								WHERE post_id = p.id
 							) AS like_count
 						FROM posts p
-						LEFT JOIN users
+						LEFT JOIN users u
+							ON p.author_id = u.id
+						LEFT JOIN categories c
+							ON p.category_id = c.id
+						WHERE p.id = ?
+					`)
+					.bind(postId)
+					.first();
+
+				if (!post) {
+					return jsonResponse(
+						{ error: '帖子不存在' },
+						404
+					);
+				}
+
+				return jsonResponse(post);
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			/^\/api\/posts\/\d+\/comments$/.test(
+				url.pathname
+			) &&
+			method === 'GET'
+		) {
+			try {
+				const postId = Number(
+					url.pathname.split('/')[3]
+				);
+
+				const comments = await db
+					.prepare(`
+						SELECT
+							c.id,
+							c.post_id,
+							c.parent_id,
+							c.author_id,
+							c.content,
+							c.created_at,
+							u.username,
+							u.avatar_url,
+							u.role,
+							u.title,
+							u.badges
+						FROM comments c
+						LEFT JOIN users u
+							ON c.author_id = u.id
+						WHERE c.post_id = ?
+						ORDER BY c.created_at ASC
+					`)
+					.bind(postId)
+					.all();
+
+				return jsonResponse(
+					comments.results || []
+				);
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			/^\/api\/posts\/\d+\/comments$/.test(
+				url.pathname
+			) &&
+			method === 'POST'
+		) {
+			try {
+				const currentUser =
+					await authenticate(request);
+
+				if (currentUser.role === 'banned') {
+					return jsonResponse(
+						{ error: '该账号当前无法回复' },
+						403
+					);
+				}
+
+				const postId = Number(
+					url.pathname.split('/')[3]
+				);
+				const body = (await request.json()) as any;
+				const content = String(
+					body.content || ''
+				).trim();
+				const parentId = body.parent_id
+					? Number(body.parent_id)
+					: null;
+
+				if (!content) {
+					return jsonResponse(
+						{ error: '评论内容不能为空' },
+						400
+					);
+				}
+
+				if (
+					content.length > 20000 ||
+					isSpamContent(content)
+				) {
+					return jsonResponse(
+						{ error: '评论内容异常或过长' },
+						400
+					);
+				}
+
+				const latestComment = await db
+					.prepare(`
+						SELECT created_at
+						FROM comments
+						WHERE author_id = ?
+						ORDER BY id DESC
+						LIMIT 1
+					`)
+					.bind(currentUser.id)
+					.first<{ created_at: string }>();
+
+				if (
+					currentUser.role !== 'admin' &&
+					latestComment?.created_at
+				) {
+					const lastTime = new Date(
+						latestComment.created_at.endsWith(
+							'Z'
+						)
+							? latestComment.created_at
+							: `${latestComment.created_at}Z`
+					).getTime();
+
+					if (Date.now() - lastTime < 3000) {
+						return jsonResponse(
+							{
+								error:
+									'回复过于频繁，请稍后再试'
+							},
+							429
+						);
+					}
+				}
+
+				const result = await db
+					.prepare(`
+						INSERT INTO comments (
+							post_id,
+							author_id,
+							parent_id,
+							content
+						)
+						VALUES (?, ?, ?, ?)
+					`)
+					.bind(
+						postId,
+						currentUser.id,
+						parentId,
+						content
+					)
+					.run();
+
+				return jsonResponse({
+					success: true,
+					id: result.meta.last_row_id
+				});
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			/^\/api\/comments\/\d+$/.test(
+				url.pathname
+			) &&
+			method === 'DELETE'
+		) {
+			try {
+				const currentUser =
+					await authenticate(request);
+				const commentId = Number(
+					url.pathname.split('/')[3]
+				);
+
+				const comment = await db
+					.prepare(`
+						SELECT author_id
+						FROM comments
+						WHERE id = ?
+					`)
+					.bind(commentId)
+					.first<{ author_id: number }>();
+
+				if (!comment) {
+					return jsonResponse(
+						{ error: '评论不存在' },
+						404
+					);
+				}
+
+				if (
+					currentUser.role !== 'admin' &&
+					comment.author_id !== currentUser.id
+				) {
+					return jsonResponse(
+						{ error: '无权删除他人评论' },
+						403
+					);
+				}
+
+				await db
+					.prepare(
+						'DELETE FROM comments WHERE id = ?'
+					)
+					.bind(commentId)
+					.run();
+
+				return jsonResponse({ success: true });
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			/^\/api\/posts\/\d+\/like$/.test(
+				url.pathname
+			) &&
+			method === 'POST'
+		) {
+			try {
+				const currentUser =
+					await authenticate(request);
+				const postId = Number(
+					url.pathname.split('/')[3]
+				);
+
+				const existingLike = await db
+					.prepare(`
+						SELECT id
+						FROM likes
+						WHERE post_id = ?
+						  AND user_id = ?
+					`)
+					.bind(postId, currentUser.id)
+					.first();
+
+				if (existingLike) {
+					await db
+						.prepare(`
+							DELETE FROM likes
+							WHERE post_id = ?
+							  AND user_id = ?
+						`)
+						.bind(
+							postId,
+							currentUser.id
+						)
+						.run();
+
+					return jsonResponse({
+						liked: false
+					});
+				}
+
+				await db
+					.prepare(`
+						INSERT INTO likes (
+							post_id,
+							user_id
+						)
+						VALUES (?, ?)
+					`)
+					.bind(postId, currentUser.id)
+					.run();
+
+				return jsonResponse({ liked: true });
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			(
+				/^\/api\/posts\/\d+\/pin$/.test(
+					url.pathname
+				) ||
+				/^\/api\/admin\/posts\/\d+\/pin$/.test(
+					url.pathname
+				)
+			) &&
+			method === 'POST'
+		) {
+			try {
+				await requireAdmin(request);
+
+				const parts = url.pathname.split('/');
+				const postId = Number(
+					parts[parts.length - 2]
+				);
+
+				const body = (await request
+					.json()
+					.catch(() => ({}))) as any;
+
+				let weight: number;
+
+				if (body.weight !== undefined) {
+					weight = Number(body.weight);
+				} else {
+					const current = await db
+						.prepare(`
+							SELECT is_pinned
+							FROM posts
+							WHERE id = ?
+						`)
+						.bind(postId)
+						.first<{ is_pinned: number }>();
+
+					weight =
+						Number(
+							current?.is_pinned || 0
+						) > 0
+							? 0
+							: 1;
+				}
+
+				if (
+					!Number.isInteger(weight) ||
+					weight < 0 ||
+					weight > 9999
+				) {
+					return jsonResponse(
+						{
+							error:
+								'置顶权重须为 0 到 9999 的整数'
+						},
+						400
+					);
+				}
+
+				await db
+					.prepare(`
+						UPDATE posts
+						SET is_pinned = ?
+						WHERE id = ?
+					`)
+					.bind(weight, postId)
+					.run();
+
+				return jsonResponse({
+					success: true,
+					weight
+				});
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			/^\/api\/admin\/posts\/\d+\/move$/.test(
+				url.pathname
+			) &&
+			method === 'POST'
+		) {
+			try {
+				await requireAdmin(request);
+
+				const postId = Number(
+					url.pathname.split('/')[4]
+				);
+				const body = (await request.json()) as any;
+				const categoryId = Number(
+					body.category_id
+				);
+
+				if (!Number.isInteger(categoryId)) {
+					return jsonResponse(
+						{ error: '无效的板块编号' },
+						400
+					);
+				}
+
+				const category = await db
+					.prepare(
+						'SELECT id FROM categories WHERE id = ?'
+					)
+					.bind(categoryId)
+					.first();
+
+				if (!category) {
+					return jsonResponse(
+						{ error: '目标板块不存在' },
+						404
+					);
+				}
+
+				await db
+					.prepare(`
+						UPDATE posts
+						SET category_id = ?
+						WHERE id = ?
+					`)
+					.bind(categoryId, postId)
+					.run();
+
+				return jsonResponse({ success: true });
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			(
+				/^\/api\/posts\/\d+$/.test(
+					url.pathname
+				) ||
+				/^\/api\/admin\/posts\/\d+$/.test(
+					url.pathname
+				)
+			) &&
+			method === 'DELETE'
+		) {
+			try {
+				const currentUser =
+					await authenticate(request);
+				const parts = url.pathname.split('/');
+				const postId = Number(
+					parts[parts.length - 1]
+				);
+
+				const post = await db
+					.prepare(`
+						SELECT author_id
+						FROM posts
+						WHERE id = ?
+					`)
+					.bind(postId)
+					.first<{ author_id: number }>();
+
+				if (!post) {
+					return jsonResponse(
+						{ error: '帖子不存在' },
+						404
+					);
+				}
+
+				if (
+					currentUser.role !== 'admin' &&
+					post.author_id !== currentUser.id
+				) {
+					return jsonResponse(
+						{ error: '无权删除他人帖子' },
+						403
+					);
+				}
+
+				await db.batch([
+					db
+						.prepare(
+							'DELETE FROM comments WHERE post_id = ?'
+						)
+						.bind(postId),
+					db
+						.prepare(
+							'DELETE FROM likes WHERE post_id = ?'
+						)
+						.bind(postId),
+					db
+						.prepare(
+							'DELETE FROM posts WHERE id = ?'
+						)
+						.bind(postId)
+				]);
+
+				return jsonResponse({ success: true });
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			url.pathname === '/api/upload' &&
+			method === 'POST'
+		) {
+			try {
+				await authenticate(request);
+
+				if (!bucket) {
+					return jsonResponse(
+						{ error: 'R2 存储尚未绑定' },
+						503
+					);
+				}
+
+				const formData =
+					await request.formData();
+				const file = formData.get(
+					'file'
+				) as File | null;
+
+				if (!file) {
+					return jsonResponse(
+						{ error: '请选择上传文件' },
+						400
+					);
+				}
+
+				if (file.size > 10 * 1024 * 1024) {
+					return jsonResponse(
+						{
+							error:
+								'上传文件不能超过 10MB'
+						},
+						400
+					);
+				}
+
+				const fileName = file.name || 'file';
+				const ext =
+					fileName
+						.split('.')
+						.pop()
+						?.toLowerCase()
+						.replace(/[^a-z0-9]/g, '') ||
+					'bin';
+
+				const key =
+					`uploads/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+
+				await bucket.put(
+					key,
+					await file.arrayBuffer(),
+					{
+						httpMetadata: {
+							contentType:
+								file.type ||
+								'application/octet-stream'
+						}
+					}
+				);
+
+				return jsonResponse({
+					url:
+						`https://cforum.day86530.workers.dev/r2/${key}`
+				});
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			url.pathname.startsWith('/r2/') &&
+			method === 'GET'
+		) {
+			if (!bucket) {
+				return new Response('R2 not configured', {
+					status: 503
+				});
+			}
+
+			const key = url.pathname.slice(4);
+			const object = await bucket.get(key);
+
+			if (!object) {
+				return new Response('Not Found', {
+					status: 404
+				});
+			}
+
+			const headers = new Headers();
+			object.writeHttpMetadata(headers);
+			headers.set('ETag', object.httpEtag);
+			headers.set(
+				'Cache-Control',
+				'public, max-age=31536000, immutable'
+			);
+			headers.set(
+				'Access-Control-Allow-Origin',
+				'*'
+			);
+			headers.set(
+				'X-Content-Type-Options',
+				'nosniff'
+			);
+
+			return new Response(object.body, {
+				headers
+			});
+		}
+
+		if (
+			url.pathname === '/api/admin/stats' &&
+			method === 'GET'
+		) {
+			try {
+				await requireAdmin(request);
+
+				const [
+					userCount,
+					postCount,
+					commentCount
+				] = await Promise.all([
+					db
+						.prepare(`
+							SELECT COUNT(*) AS count
+							FROM users
+							WHERE username != '已注销用户'
+							  AND role != 'deleted'
+						`)
+						.first<{ count: number }>(),
+					db
+						.prepare(
+							'SELECT COUNT(*) AS count FROM posts'
+						)
+						.first<{ count: number }>(),
+					db
+						.prepare(
+							'SELECT COUNT(*) AS count FROM comments'
+						)
+						.first<{ count: number }>()
+				]);
+
+				return jsonResponse({
+					users: Number(
+						userCount?.count || 0
+					),
+					posts: Number(
+						postCount?.count || 0
+					),
+					comments: Number(
+						commentCount?.count || 0
+					)
+				});
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			url.pathname === '/api/admin/users' &&
+			method === 'GET'
+		) {
+			try {
+				await requireAdmin(request);
+				await ensureSchema();
+
+				const result = await db
+					.prepare(`
+						SELECT id, email, username, role,
+						       verified, created_at, avatar_url,
+						       points, title, badges, reg_ip
+						FROM users
+						ORDER BY id DESC
+					`)
+					.all();
+
+				return jsonResponse(
+					result.results || []
+				);
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			url.pathname === '/api/admin/badges' &&
+			method === 'POST'
+		) {
+			try {
+				await requireAdmin(request);
+				await ensureSchema();
+
+				const body = (await request.json()) as any;
+				const name = String(
+					body.name || ''
+				).trim();
+				const description = String(
+					body.description || ''
+				).trim();
+				const color = String(
+					body.color ||
+						'border-amber-500 bg-amber-500/10 text-amber-300'
+				).trim();
+
+				if (!name || name.length > 32) {
+					return jsonResponse(
+						{
+							error:
+								'勋章名称不能为空且不能超过 32 个字符'
+						},
+						400
+					);
+				}
+
+				await db
+					.prepare(`
+						INSERT INTO site_badges (
+							name,
+							description,
+							color
+						)
+						VALUES (?, ?, ?)
+					`)
+					.bind(
+						name,
+						description.slice(0, 100),
+						color.slice(0, 200)
+					)
+					.run();
+
+				return jsonResponse({
+					success: true,
+					name
+				});
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			/^\/api\/admin\/badges\/\d+$/.test(
+				url.pathname
+			) &&
+			method === 'DELETE'
+		) {
+			try {
+				await requireAdmin(request);
+
+				const badgeId = Number(
+					url.pathname.split('/')[4]
+				);
+
+				await db
+					.prepare(
+						'DELETE FROM site_badges WHERE id = ?'
+					)
+					.bind(badgeId)
+					.run();
+
+				return jsonResponse({ success: true });
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			url.pathname === '/api/admin/ban-ip' &&
+			method === 'POST'
+		) {
+			try {
+				await requireAdmin(request);
+				await ensureSchema();
+
+				const body = (await request.json()) as any;
+				const targetIp = String(
+					body.ip || ''
+				).trim();
+				const reason = String(
+					body.reason ||
+						'站长手动封禁异常 IP'
+				)
+					.trim()
+					.slice(0, 200);
+
+				if (
+					!targetIp ||
+					targetIp === '127.0.0.1'
+				) {
+					return jsonResponse(
+						{ error: '无效的 IP 地址' },
+						400
+					);
+				}
+
+				if (
+					clientIp &&
+					targetIp === clientIp
+				) {
+					return jsonResponse(
+						{
+							error:
+								'为防止站长失去访问权限，不能封禁当前管理 IP'
+						},
+						400
+					);
+				}
+
+				await db
+					.prepare(`
+						INSERT OR IGNORE INTO banned_ips (
+							ip,
+							reason
+						)
+						VALUES (?, ?)
+					`)
+					.bind(targetIp, reason)
+					.run();
+
+				await db
+					.prepare(`
+						UPDATE users
+						SET role = 'banned'
+						WHERE reg_ip = ?
+						  AND id != 1
+					`)
+					.bind(targetIp)
+					.run();
+
+				return jsonResponse({
+					success: true,
+					ip: targetIp
+				});
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			url.pathname ===
+				'/api/admin/users/batch-delete' &&
+			method === 'POST'
+		) {
+			try {
+				await requireAdmin(request);
+
+				const body = (await request.json()) as any;
+				const userIds = Array.isArray(body.ids)
+					? Array.from(
+							new Set(
+								body.ids
+									.map(Number)
+									.filter(
+										(id: number) =>
+											Number.isInteger(
+												id
+											) && id > 1
+									)
+							)
+						)
+					: [];
+
+				if (!userIds.length) {
+					return jsonResponse(
+						{ error: '请选择要删除的用户' },
+						400
+					);
+				}
+
+				for (
+					let start = 0;
+					start < userIds.length;
+					start += 50
+				) {
+					const batchIds = userIds.slice(
+						start,
+						start + 50
+					);
+					const placeholders = batchIds
+						.map(() => '?')
+						.join(',');
+
+					await db
+						.prepare(`
+							DELETE FROM likes
+							WHERE user_id IN (${placeholders})
+						`)
+						.bind(...batchIds)
+						.run()
+						.catch(() => {});
+
+					await db
+						.prepare(`
+							DELETE FROM checkins
+							WHERE user_id IN (${placeholders})
+						`)
+						.bind(...batchIds)
+						.run()
+						.catch(() => {});
+
+					await db
+						.prepare(`
+							DELETE FROM sessions
+							WHERE user_id IN (${placeholders})
+						`)
+						.bind(...batchIds)
+						.run()
+						.catch(() => {});
+
+					await db
+						.prepare(`
+							DELETE FROM comments
+							WHERE author_id IN (${placeholders})
+						`)
+						.bind(...batchIds)
+						.run()
+						.catch(() => {});
+
+					await db
+						.prepare(`
+							DELETE FROM posts
+							WHERE author_id IN (${placeholders})
+						`)
+						.bind(...batchIds)
+						.run()
+						.catch(() => {});
+
+					await db
+						.prepare(`
+							DELETE FROM users
+							WHERE id IN (${placeholders})
+							  AND id != 1
+						`)
+						.bind(...batchIds)
+						.run();
+				}
+
+				return jsonResponse({
+					success: true,
+					count: userIds.length
+				});
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			url.pathname ===
+				'/api/admin/users/batch-banish' &&
+			method === 'POST'
+		) {
+			try {
+				await requireAdmin(request);
+
+				const body = (await request.json()) as any;
+				const userIds = Array.isArray(body.ids)
+					? Array.from(
+							new Set(
+								body.ids
+									.map(Number)
+									.filter(
+										(id: number) =>
+											Number.isInteger(
+												id
+											) && id > 1
+									)
+							)
+						)
+					: [];
+
+				if (!userIds.length) {
+					return jsonResponse(
+						{ error: '请选择要关押的用户' },
+						400
+					);
+				}
+
+				const reason = String(
+					body.reason ||
+						'站长批量处分异常账号'
+				)
+					.trim()
+					.slice(0, 200);
+
+				const duration = String(
+					body.duration || '永久封禁'
+				)
+					.trim()
+					.slice(0, 50);
+
+				for (
+					let start = 0;
+					start < userIds.length;
+					start += 50
+				) {
+					const batchIds = userIds.slice(
+						start,
+						start + 50
+					);
+					const placeholders = batchIds
+						.map(() => '?')
+						.join(',');
+
+					const selectedUsers = await db
+						.prepare(`
+							SELECT id, username
+							FROM users
+							WHERE id IN (${placeholders})
+							  AND id != 1
+						`)
+						.bind(...batchIds)
+						.all<{
+							id: number;
+							username: string;
+						}>();
+
+					await db
+						.prepare(`
+							UPDATE users
+							SET role = 'banned'
+							WHERE id IN (${placeholders})
+							  AND id != 1
+						`)
+						.bind(...batchIds)
+						.run();
+
+					await db
+						.prepare(`
+							DELETE FROM sessions
+							WHERE user_id IN (${placeholders})
+						`)
+						.bind(...batchIds)
+						.run()
+						.catch(() => {});
+
+					for (const selected of
+						selectedUsers.results || []) {
+						await db
+							.prepare(`
+								INSERT INTO blackhouse (
+									user_id,
+									username,
+									reason,
+									duration
+								)
+								VALUES (?, ?, ?, ?)
+							`)
+							.bind(
+								selected.id,
+								selected.username,
+								reason,
+								duration
+							)
+							.run();
+					}
+				}
+
+				return jsonResponse({
+					success: true,
+					count: userIds.length
+				});
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			/^\/api\/admin\/users\/\d+\/banish$/.test(
+				url.pathname
+			) &&
+			method === 'POST'
+		) {
+			try {
+				await requireAdmin(request);
+
+				const userId = Number(
+					url.pathname.split('/')[4]
+				);
+
+				if (userId === 1) {
+					return jsonResponse(
+						{
+							error:
+								'站长主账号受系统保护'
+						},
+						400
+					);
+				}
+
+				const body = (await request.json()) as any;
+				const reason = String(
+					body.reason ||
+						'违反社区规则'
+				)
+					.trim()
+					.slice(0, 200);
+				const duration = String(
+					body.duration || '永久封禁'
+				)
+					.trim()
+					.slice(0, 50);
+
+				const target = await db
+					.prepare(`
+						SELECT username
+						FROM users
+						WHERE id = ?
+					`)
+					.bind(userId)
+					.first<{ username: string }>();
+
+				if (!target) {
+					return jsonResponse(
+						{ error: '用户不存在' },
+						404
+					);
+				}
+
+				await db
+					.prepare(`
+						UPDATE users
+						SET role = 'banned'
+						WHERE id = ?
+					`)
+					.bind(userId)
+					.run();
+
+				await db
+					.prepare(
+						'DELETE FROM sessions WHERE user_id = ?'
+					)
+					.bind(userId)
+					.run()
+					.catch(() => {});
+
+				await db
+					.prepare(`
+						INSERT INTO blackhouse (
+							user_id,
+							username,
+							reason,
+							duration
+						)
+						VALUES (?, ?, ?, ?)
+					`)
+					.bind(
+						userId,
+						target.username,
+						reason,
+						duration
+					)
+					.run();
+
+				return jsonResponse({
+					success: true,
+					username: target.username
+				});
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			/^\/api\/admin\/users\/\d+\/role$/.test(
+				url.pathname
+			) &&
+			method === 'POST'
+		) {
+			try {
+				await requireAdmin(request);
+
+				const userId = Number(
+					url.pathname.split('/')[4]
+				);
+
+				if (userId === 1) {
+					return jsonResponse(
+						{
+							error:
+								'站长主账号角色不可更改'
+						},
+						400
+					);
+				}
+
+				const body = (await request.json()) as any;
+				const role = String(
+					body.role || ''
+				).trim();
+
+				const allowedRoles = new Set([
+					'user',
+					'moderator',
+					'elder',
+					'vip',
+					'pro',
+					'active',
+					'banned'
+				]);
+
+				if (!allowedRoles.has(role)) {
+					return jsonResponse(
+						{ error: '无效的角色类型' },
+						400
+					);
+				}
+
+				await db
+					.prepare(`
+						UPDATE users
+						SET role = ?
+						WHERE id = ?
+					`)
+					.bind(role, userId)
+					.run();
+
+				return jsonResponse({
+					success: true,
+					role
+				});
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			/^\/api\/admin\/users\/\d+\/rename$/.test(
+				url.pathname
+			) &&
+			method === 'POST'
+		) {
+			try {
+				await requireAdmin(request);
+
+				const userId = Number(
+					url.pathname.split('/')[4]
+				);
+				const body = (await request.json()) as any;
+				const username = normalizeUsername(
+					body.username
+				);
+
+				if (!isValidUsername(username)) {
+					return jsonResponse(
+						{
+							error:
+								'用户名须为 2 到 16 个中文、字母、数字、下划线、横线或小数点'
+						},
+						400
+					);
+				}
+
+				const duplicate = await db
+					.prepare(`
+						SELECT id
+						FROM users
+						WHERE LOWER(username) = LOWER(?)
+						  AND id != ?
+					`)
+					.bind(username, userId)
+					.first();
+
+				if (duplicate) {
+					return jsonResponse(
+						{ error: '该用户名已被占用' },
+						409
+					);
+				}
+
+				await db
+					.prepare(`
+						UPDATE users
+						SET username = ?
+						WHERE id = ?
+					`)
+					.bind(username, userId)
+					.run();
+
+				return jsonResponse({
+					success: true,
+					username
+				});
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			/^\/api\/admin\/users\/\d+\/badges$/.test(
+				url.pathname
+			) &&
+			method === 'POST'
+		) {
+			try {
+				await requireAdmin(request);
+
+				const userId = Number(
+					url.pathname.split('/')[4]
+				);
+				const body = (await request.json()) as any;
+
+				const badges = Array.isArray(body.badges)
+					? Array.from(
+							new Set(
+								body.badges
+									.map((value: unknown) =>
+										String(value).trim()
+									)
+									.filter(Boolean)
+							)
+						).slice(0, 30)
+					: [];
+
+				await db
+					.prepare(`
+						UPDATE users
+						SET badges = ?
+						WHERE id = ?
+					`)
+					.bind(
+						JSON.stringify(badges),
+						userId
+					)
+					.run();
+
+				return jsonResponse({
+					success: true,
+					badges
+				});
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			url.pathname ===
+				'/api/admin/users/batch-badges' &&
+			method === 'POST'
+		) {
+			try {
+				await requireAdmin(request);
+				await ensureSchema();
+
+				const body = (await request.json()) as any;
+				const badge = String(
+					body.badge || ''
+				).trim();
+				const scope =
+					body.scope === 'top100'
+						? 'top100'
+						: 'all';
+
+				if (!badge || badge.length > 32) {
+					return jsonResponse(
+						{ error: '请选择有效勋章' },
+						400
+					);
+				}
+
+				let query = `
+					SELECT id, badges
+					FROM users
+					WHERE username != '已注销用户'
+					  AND role != 'banned'
+					  AND role != 'deleted'
+				`;
+
+				if (scope === 'top100') {
+					query +=
+						' ORDER BY id ASC LIMIT 100';
+				}
+
+				const targetUsers = await db
+					.prepare(query)
+					.all<{
+						id: number;
+						badges: string;
+					}>();
+
+				let affected = 0;
+
+				for (const target of
+					targetUsers.results || []) {
+					const badges = safeJsonArray(
+						target.badges
+					);
+
+					if (!badges.includes(badge)) {
+						badges.push(badge);
+
+						await db
+							.prepare(`
+								UPDATE users
+								SET badges = ?
+								WHERE id = ?
+							`)
+							.bind(
+								JSON.stringify(badges),
+								target.id
+							)
+							.run();
+
+						affected++;
+					}
+				}
+
+				return jsonResponse({
+					success: true,
+					affected,
+					badge
+				});
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (
+			/^\/api\/admin\/users\/\d+\/points$/.test(
+				url.pathname
+			) &&
+			method === 'POST'
+		) {
+			try {
+				await requireAdmin(request);
+
+				const userId = Number(
+					url.pathname.split('/')[4]
+				);
+				const body = (await request.json()) as any;
+				const amount = Number(body.amount);
+
+				if (
+					!Number.isInteger(amount) ||
+					Math.abs(amount) > 100000
+				) {
+					return jsonResponse(
+						{ error: '请输入有效的整数' },
+						400
+					);
+				}
+
+				await db
+					.prepare(`
+						UPDATE users
+						SET points = MAX(
+							0,
+							COALESCE(points, 0) + ?
+						)
+						WHERE id = ?
+					`)
+					.bind(amount, userId)
+					.run();
+
+				const updated = await db
+					.prepare(`
+						SELECT points
+						FROM users
+						WHERE id = ?
+					`)
+					.bind(userId)
+					.first<{ points: number }>();
+
+				return jsonResponse({
+					success: true,
+					points: Number(
+						updated?.points || 0
+					)
+				});
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		return jsonResponse(
+			{
+				error:
+					'接口不存在: ' + url.pathname
+			},
+			404
+		);
+	}
+};
