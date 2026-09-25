@@ -98,7 +98,6 @@ export default {
 			return restrictedKeywords.some(k => lower.includes(k));
 		};
 
-		// 核心安全：主流合规邮箱域名白名单（彻底截断机器人临时脚本小号）
 		const ALLOWED_EMAIL_DOMAINS = [
 			'qq.com', '163.com', '126.com', '139.com', '189.com', 'aliyun.com', 'sina.com', 'sina.cn', 'foxmail.com', 'yeah.net',
 			'gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com', 'icloud.com', 'proton.me', 'protonmail.com'
@@ -232,7 +231,7 @@ export default {
 			}
 		}
 
-		// POST /api/register (三维加固：邮箱白名单 + 用户名 2~16 字符限制 + 长度防御)
+		// POST /api/register
 		if (url.pathname === '/api/register' && method === 'POST') {
 			try {
 				await ensureColumns();
@@ -242,23 +241,17 @@ export default {
 				const password = String(body.password || '').trim();
 
 				if (!email || !username || !password) return jsonResponse({ error: '请填写完整用户名、邮箱和密码' }, 400);
-
-				// 1. 严格限制用户名长度：2 ~ 16 个字符，彻底杜绝 UAAAA... 刷屏
 				if (username.length < 2 || username.length > 16) {
 					return jsonResponse({ error: '用户名长度须在 2 到 16 个字符之间！' }, 400);
 				}
-
-				// 2. 严格限制密码长度：6 ~ 64 位
 				if (password.length < 6 || password.length > 64) {
 					return jsonResponse({ error: '密码长度须在 6 到 64 位之间！' }, 400);
 				}
 
-				// 3. 严格禁止官方仿冒词
 				if (hasRestrictedKeywords(username)) {
 					return jsonResponse({ error: '该用户名包含系统官方保留词（如客服、站长、管理等），禁止注册！' }, 400);
 				}
 
-				// 4. 核心加固：常用合规主流邮箱白名单检查！
 				if (!isValidEmailDomain(email)) {
 					return jsonResponse({
 						error: '为杜绝机器人恶意批量注册，本站仅支持主流常用邮箱（如 QQ、163、126、Gmail、Outlook、iCloud、Proton 等）注册！'
@@ -396,7 +389,7 @@ export default {
 			}
 		}
 
-		// GET /api/posts
+		// GET /api/posts (核心算法升级：按 is_pinned 权重降序排列！权重越大的置顶贴越在最前面！)
 		if (url.pathname === '/api/posts' && method === 'GET') {
 			try {
 				await ensureColumns();
@@ -406,7 +399,7 @@ export default {
 
 				let query = `
 					SELECT 
-						p.id, p.author_id, p.title, p.content, p.category_id, p.is_pinned,
+						p.id, p.author_id, p.title, p.content, p.category_id, COALESCE(p.is_pinned, 0) as is_pinned,
 						p.badge, COALESCE(p.reward_points, 0) as reward_points,
 						COALESCE(p.views, 0) as view_count, p.created_at,
 						u.username as author_name, u.avatar_url as author_avatar, u.role as author_role, u.title as author_title, u.badges as author_badges,
@@ -424,7 +417,8 @@ export default {
 					params.push(categoryId);
 				}
 
-				query += ' ORDER BY p.is_pinned DESC, p.created_at DESC LIMIT ? OFFSET ?';
+				// 核心排序：优先看置顶权重（99 > 2 > 1 > 0），置顶相同的再按时间排！
+				query += ' ORDER BY COALESCE(p.is_pinned, 0) DESC, p.created_at DESC LIMIT ? OFFSET ?';
 				params.push(limit, offset);
 
 				const posts = await env.cforum_db.prepare(query).bind(...params).all();
@@ -545,7 +539,7 @@ export default {
 
 				const post = await env.cforum_db.prepare(`
 					SELECT 
-						p.id, p.author_id, p.title, p.content, p.category_id, p.is_pinned,
+						p.id, p.author_id, p.title, p.content, p.category_id, COALESCE(p.is_pinned, 0) as is_pinned,
 						p.badge, COALESCE(p.reward_points, 0) as reward_points,
 						COALESCE(p.views, 0) as view_count, p.created_at,
 						u.username as author_name, u.avatar_url as author_avatar, u.role as author_role, u.title as author_title, u.badges as author_badges,
@@ -649,19 +643,26 @@ export default {
 			}
 		}
 
-		// POST /api/posts/:id/pin 及 /api/admin/posts/:id/pin
+		// POST /api/posts/:id/pin (支持站长传入自定义置顶权重)
 		if ((url.pathname.match(/^\/api\/posts\/\d+\/pin$/) || url.pathname.match(/^\/api\/admin\/posts\/\d+\/pin$/)) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
 				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
 				const parts = url.pathname.split('/');
-				const postId = parts[parts.length - 2];
+				const postId = parts[parts.length - 2] || parts[parts.length - 1];
 
-				await env.cforum_db.prepare(
-					'UPDATE posts SET is_pinned = CASE WHEN is_pinned = 1 THEN 0 ELSE 1 END WHERE id = ?'
-				).bind(postId).run();
+				const body = await request.json().catch(() => ({})) as any;
+				let targetWeight: number;
 
-				return jsonResponse({ success: true });
+				if (body && body.weight !== undefined) {
+					targetWeight = parseInt(body.weight) || 0;
+				} else {
+					const post = await env.cforum_db.prepare('SELECT is_pinned FROM posts WHERE id = ?').bind(postId).first<{ is_pinned: number }>();
+					targetWeight = (post?.is_pinned && post.is_pinned > 0) ? 0 : 1;
+				}
+
+				await env.cforum_db.prepare('UPDATE posts SET is_pinned = ? WHERE id = ?').bind(targetWeight, postId).run();
+				return jsonResponse({ success: true, weight: targetWeight });
 			} catch (e) {
 				return handleError(e);
 			}
@@ -682,7 +683,7 @@ export default {
 			}
 		}
 
-		// DELETE /api/posts/:id 及 /api/admin/posts/:id
+		// DELETE /api/posts/:id
 		if ((url.pathname.match(/^\/api\/posts\/\d+$/) || url.pathname.match(/^\/api\/admin\/posts\/\d+$/)) && method === 'DELETE') {
 			try {
 				const userPayload = await authenticate(request);
