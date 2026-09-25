@@ -86,6 +86,7 @@ export default {
 			await env.cforum_db.prepare('ALTER TABLE posts ADD COLUMN reward_points INTEGER DEFAULT 0').run().catch(() => {});
 			await env.cforum_db.prepare("ALTER TABLE users ADD COLUMN badges TEXT DEFAULT '[]'").run().catch(() => {});
 			await env.cforum_db.prepare("CREATE TABLE IF NOT EXISTS blackhouse (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, username TEXT, reason TEXT, duration TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)").run().catch(() => {});
+			await env.cforum_db.prepare("CREATE TABLE IF NOT EXISTS site_badges (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, description TEXT, color TEXT DEFAULT 'border-amber-500 bg-amber-500/10 text-amber-300', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)").run().catch(() => {});
 		};
 
 		const hasRestrictedKeywords = (username: string): boolean => {
@@ -111,9 +112,7 @@ export default {
 			return ALLOWED_EMAIL_DOMAINS.includes(domain);
 		};
 
-		// 核心防御：检测是否为脚本恶意灌水/连续无意义长串
 		const isSpamContent = (text: string): boolean => {
-			// 检测单一字符连续重复 12 次以上（如 AAAAAAAAAAAA）
 			if (/(.)\1{11,}/.test(text)) return true;
 			return false;
 		};
@@ -128,6 +127,55 @@ export default {
 					user_count: userCount ? (userCount as any).count : 0,
 					jwt_secret_configured: true
 				});
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// GET /api/badges (获取全站勋章库列表)
+		if (url.pathname === '/api/badges' && method === 'GET') {
+			try {
+				await ensureColumns();
+				const list = await env.cforum_db.prepare("SELECT id, name, description, color FROM site_badges ORDER BY id ASC").all();
+				return jsonResponse(list.results || []);
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// POST /api/admin/badges (站长在后台可视化铸造新勋章)
+		if (url.pathname === '/api/admin/badges' && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
+
+				await ensureColumns();
+				const body = await request.json() as any;
+				const name = String(body.name || '').trim();
+				const description = String(body.description || '').trim();
+				const color = String(body.color || 'border-amber-500 bg-amber-500/10 text-amber-300').trim();
+
+				if (!name) return jsonResponse({ error: '勋章名称不能为空' }, 400);
+
+				await env.cforum_db.prepare(
+					"INSERT INTO site_badges (name, description, color) VALUES (?, ?, ?)"
+				).bind(name, description, color).run();
+
+				return jsonResponse({ success: true, name });
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// DELETE /api/admin/badges/:id (删除勋章库中的勋章)
+		if (url.pathname.match(/^\/api\/admin\/badges\/\d+$/) && method === 'DELETE') {
+			try {
+				const userPayload = await authenticate(request);
+				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
+
+				const badgeId = url.pathname.split('/')[4];
+				await env.cforum_db.prepare("DELETE FROM site_badges WHERE id = ?").bind(badgeId).run();
+				return jsonResponse({ success: true });
 			} catch (e) {
 				return handleError(e);
 			}
@@ -462,7 +510,7 @@ export default {
 			}
 		}
 
-		// POST /api/posts (防脚本反制铁律：10秒防刷连发 + 垃圾特征识别 + 自动锁死小黑屋)
+		// POST /api/posts
 		if (url.pathname === '/api/posts' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -474,12 +522,10 @@ export default {
 
 				if (!title || !content) return jsonResponse({ error: '标题与内容不能为空' }, 400);
 
-				// 1. 检测恶意无意义垃圾字符串刷屏
 				if (isSpamContent(title) || isSpamContent(content)) {
 					return jsonResponse({ error: '❌ 检测到恶意刷屏或连续重复乱码特征，系统已拒绝提交！' }, 400);
 				}
 
-				// 2. 频率冷却检查（普通用户 10 秒内只能发一次，杜绝脚本高频轰炸）
 				if (userPayload.role !== 'admin') {
 					const latestPost = await env.cforum_db.prepare(
 						"SELECT created_at FROM posts WHERE author_id = ? ORDER BY id DESC LIMIT 1"
@@ -632,7 +678,7 @@ export default {
 			}
 		}
 
-		// POST /api/posts/:id/comments (同样加入防刷限制)
+		// POST /api/posts/:id/comments
 		if (url.pathname.match(/^\/api\/posts\/\d+\/comments$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
