@@ -86,6 +86,18 @@ export default {
 			await env.cforum_db.prepare("ALTER TABLE users ADD COLUMN badges TEXT DEFAULT '[]'").run().catch(() => {});
 		};
 
+		// 严防仿冒官方词库
+		const hasRestrictedKeywords = (username: string): boolean => {
+			const restrictedKeywords = [
+				'admin', 'administrator', 'root', 'system', 'sysadmin',
+				'moderator', 'mod', 'support', 'help', 'service',
+				'official', 'staff', 'team', 'master',
+				'官方', '客服', '站长', '管理', '系统', '总管'
+			];
+			const lower = username.toLowerCase();
+			return restrictedKeywords.some(k => lower.includes(k));
+		};
+
 		// GET /api/config
 		if (url.pathname === '/api/config' && method === 'GET') {
 			try {
@@ -151,7 +163,7 @@ export default {
 			}
 		}
 
-		// POST /api/user/avatar (核心安全加固：严格禁止普通会员冒领“站长/管理员”称号！)
+		// POST /api/user/avatar
 		if (url.pathname === '/api/user/avatar' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -162,7 +174,6 @@ export default {
 				}
 				if (body.title !== undefined) {
 					const requestedTitle = String(body.title || '').trim();
-					// 如果普通用户试图把称号设置成包含“站长/管理员/官方/admin”等词，当场拒绝！
 					if (userPayload.role !== 'admin' && (requestedTitle.includes('站长') || requestedTitle.includes('管理员') || requestedTitle.includes('官方') || requestedTitle.toLowerCase().includes('admin'))) {
 						return jsonResponse({ error: '权限不足：【站长】与【官方】专属称号仅限总管理员佩戴！' }, 403);
 					}
@@ -197,7 +208,7 @@ export default {
 			}
 		}
 
-		// POST /api/register
+		// POST /api/register (加入严格中文仿冒词拦截)
 		if (url.pathname === '/api/register' && method === 'POST') {
 			try {
 				await ensureColumns();
@@ -208,6 +219,11 @@ export default {
 
 				if (!email || !username || !password) return jsonResponse({ error: '请填写完整用户名、邮箱和密码' }, 400);
 				if (password.length < 6) return jsonResponse({ error: '密码长度至少 6 位' }, 400);
+
+				// 严禁注册“官方客服/站长/管理”等仿冒名
+				if (hasRestrictedKeywords(username)) {
+					return jsonResponse({ error: '该用户名包含系统官方保留词（如客服、站长、管理等），禁止注册！' }, 400);
+				}
 
 				const existing = await env.cforum_db.prepare(
 					'SELECT email, username FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)'
@@ -695,6 +711,29 @@ export default {
 					'SELECT id, email, username, role, verified, created_at, avatar_url, points, title, badges FROM users ORDER BY id DESC'
 				).all();
 				return jsonResponse(users.results);
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// 核心新增：站长强制修改任意用户昵称接口！
+		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/rename$/) && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
+
+				const targetUserId = url.pathname.split('/')[4];
+				const body = await request.json() as any;
+				const newName = String(body.username || '').trim();
+
+				if (!newName) return jsonResponse({ error: '用户名不能为空' }, 400);
+
+				// 检查新名字是否已被其他人使用
+				const exists = await env.cforum_db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').bind(newName, targetUserId).first();
+				if (exists) return jsonResponse({ error: '该用户名已被占用，请换一个' }, 409);
+
+				await env.cforum_db.prepare('UPDATE users SET username = ? WHERE id = ?').bind(newName, targetUserId).run();
+				return jsonResponse({ success: true, username: newName });
 			} catch (e) {
 				return handleError(e);
 			}
