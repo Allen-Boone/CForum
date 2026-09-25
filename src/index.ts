@@ -44,6 +44,62 @@ export default {
 		const url = new URL(request.url);
 		const method = request.method;
 
+		// 1. Google 官方 SEO 专用标准 sitemap.xml 接口
+		if (url.pathname === '/sitemap.xml' && method === 'GET') {
+			const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://blog.t20.de5.net/</loc>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://blog.t20.de5.net/post?id=14</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://blog.t20.de5.net/post?id=101</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://blog.t20.de5.net/post?id=102</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://blog.t20.de5.net/post?id=103</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+</urlset>`;
+			return new Response(sitemapXml, {
+				status: 200,
+				headers: {
+					'Content-Type': 'application/xml; charset=utf-8',
+					'Cache-Control': 'public, max-age=3600',
+					'Access-Control-Allow-Origin': '*'
+				}
+			});
+		}
+
+		// 2. Google 官方爬虫放行 robots.txt 接口
+		if (url.pathname === '/robots.txt' && method === 'GET') {
+			const robotsTxt = `User-agent: *
+Allow: /
+Sitemap: https://blog.t20.de5.net/sitemap.xml
+`;
+			return new Response(robotsTxt, {
+				status: 200,
+				headers: {
+					'Content-Type': 'text/plain; charset=utf-8',
+					'Cache-Control': 'public, max-age=3600',
+					'Access-Control-Allow-Origin': '*'
+				}
+			});
+		}
+
 		if (method === 'OPTIONS') {
 			return new Response(null, {
 				status: 204,
@@ -132,7 +188,7 @@ export default {
 			}
 		}
 
-		// GET /api/badges (获取全站勋章库列表)
+		// GET /api/badges
 		if (url.pathname === '/api/badges' && method === 'GET') {
 			try {
 				await ensureColumns();
@@ -143,7 +199,7 @@ export default {
 			}
 		}
 
-		// POST /api/admin/badges (站长在后台可视化铸造新勋章)
+		// POST /api/admin/badges
 		if (url.pathname === '/api/admin/badges' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -167,7 +223,7 @@ export default {
 			}
 		}
 
-		// DELETE /api/admin/badges/:id (删除勋章库中的勋章)
+		// DELETE /api/admin/badges/:id
 		if (url.pathname.match(/^\/api\/admin\/badges\/\d+$/) && method === 'DELETE') {
 			try {
 				const userPayload = await authenticate(request);
