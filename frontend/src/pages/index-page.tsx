@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Gift, Flame, Zap, FolderInput, Gavel, X } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Gift, Flame, Zap, FolderInput, Gavel, X, ShieldCheck, CheckCircle2, Minus } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -190,8 +190,12 @@ export function IndexPage() {
 	const avatarInputRef = React.useRef<HTMLInputElement>(null);
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
+	// 小黑屋与信任等级看板状态
 	const [blackhouseOpen, setBlackhouseOpen] = React.useState(false);
 	const [blackhouseList, setBlackhouseList] = React.useState<Array<{ id: number; username: string; reason: string; duration: string; created_at: string }>>([]);
+	const [trustModalOpen, setTrustModalOpen] = React.useState(false);
+	const [userTrustLevel, setUserTrustLevel] = React.useState<number>(0);
+	const [userStats, setUserStats] = React.useState<{ posts_count: number; comments_count: number; points: number }>({ posts_count: 0, comments_count: 0, points: 0 });
 
 	const [commStats, setCommStats] = React.useState<{
 		topics: number;
@@ -220,6 +224,8 @@ export function IndexPage() {
 						setUserTitle(fixedTitle);
 						setUserBadges(Array.isArray(fresh.badges) ? fresh.badges : []);
 						setCheckedIn(Boolean(fresh.checked_in_today));
+						setUserTrustLevel(fresh.trust_level ?? 0);
+						if (fresh.stats) setUserStats(fresh.stats);
 						const merged = { ...fresh, title: fixedTitle };
 						setUser(merged);
 						setCurrentUser(merged);
@@ -451,7 +457,6 @@ export function IndexPage() {
 		}
 	}
 
-	// 核心亮点：站长设置置顶权重（99 = 超级最高置顶霸占第1行，2/1 = 普通置顶，0 = 取消）
 	async function handleTogglePin(postId: number, currentPin?: number) {
 		const input = prompt(
 			`【站长设置帖子置顶权重】\n当前状态：${(currentPin && currentPin > 0) ? `已置顶 (权重 ${currentPin})` : '未置顶'}\n\n请输入置顶权重：\n• 输入 99 = 超级最高置顶（永远霸占第 1 位，适合总公告）\n• 输入 2 = 次级置顶\n• 输入 1 = 普通置顶\n• 输入 0 = 取消置顶`,
@@ -605,6 +610,16 @@ export function IndexPage() {
 	const displayLatestUsers = allRealUsers.slice(0, 8);
 	const displayOnlineUsers = allRealUsers.slice(0, Math.min(8, allRealUsers.length));
 	const onlineCount = Math.min(commStats.users || 1, Math.max(1, Math.floor((commStats.users || 1) * 0.4) + 1));
+
+	// 信任等级名称与图示
+	const TRUST_LEVEL_META = [
+		{ name: 'TL0 新访客', icon: '⭐', desc: '新注册未深度互动', color: 'text-gray-400' },
+		{ name: 'TL1 见习', icon: '🌙', desc: '浏览并参与互动', color: 'text-amber-400' },
+		{ name: 'TL2 正式成员', icon: '🌏', desc: '活跃达标、自由发帖', color: 'text-sky-400' },
+		{ name: 'TL3 社区骨干', icon: '🔥', desc: '深度贡献、享有荣誉特权', color: 'text-orange-400' },
+		{ name: 'TL4 社区领袖', icon: '💎', desc: '管理监督、至高信任', color: 'text-purple-400' }
+	];
+	const currentTL = TRUST_LEVEL_META[userTrustLevel] || TRUST_LEVEL_META[0];
 
 	return (
 		<PageShell>
@@ -947,8 +962,15 @@ export function IndexPage() {
 												{avatarUploading ? '上传中' : '换头像'}
 											</button>
 										</div>
-										<button onClick={handleSwitchTitle} className="mt-1 text-[11px] px-1.5 py-0.5 rounded bg-blue-950/60 text-blue-300 border border-blue-800/60 flex items-center gap-1">
-											<Trophy className="w-3 h-3 text-yellow-500" /> {userTitle}
+										{/* 点击直接打开信任段位看板！ */}
+										<button
+											onClick={() => setTrustModalOpen(true)}
+											title="点击查看信任等级成长与能力解锁看板"
+											className="mt-1 text-[11px] px-2 py-0.5 rounded bg-blue-950/70 text-blue-300 border border-blue-800/80 flex items-center gap-1.5 hover:border-blue-500 transition-colors"
+										>
+											<span>{currentTL.icon}</span>
+											<span className="font-bold">{currentTL.name}</span>
+											<span className="text-[10px] text-blue-400/80 font-normal">段位&gt;</span>
 										</button>
 									</div>
 								</div>
@@ -992,6 +1014,8 @@ export function IndexPage() {
 						<div className="grid grid-cols-2 gap-y-2 text-gray-400">
 							<span onClick={handleCheckin} className="hover:text-emerald-400 cursor-pointer text-emerald-500 font-medium">• 每日签到（领积分）</span>
 							<span onClick={() => avatarInputRef.current?.click()} className="hover:text-sky-400 cursor-pointer text-sky-400 font-medium">• 📷 更换个性头像</span>
+							{/* 核心亮点：段位与小黑屋快捷入口 */}
+							<span onClick={() => setTrustModalOpen(true)} className="hover:text-amber-300 cursor-pointer text-amber-400 font-semibold">• 🏆 我的等级(段位)</span>
 							<span onClick={handleOpenBlackhouse} className="hover:text-rose-400 cursor-pointer text-rose-400 font-bold flex items-center gap-1">• <Gavel className="w-3 h-3" /> 社区小黑屋</span>
 							<span onClick={handleSwitchTitle} className="hover:text-blue-400 cursor-pointer">• 我的称号仓库</span>
 							<span onClick={() => setActiveTab('featured')} className="hover:text-purple-400 cursor-pointer text-purple-400 font-medium">• 💎 精华神帖列表</span>
@@ -1072,6 +1096,205 @@ export function IndexPage() {
 						<div className="flex justify-end pt-2 border-t border-[#30363d]">
 							<Button size="sm" onClick={() => setBlackhouseOpen(false)} className="bg-gray-800 hover:bg-gray-700 text-xs">
 								关闭公示窗口
+							</Button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* 核心亮点：1:1 像素级复刻的「信任等级 / 段位看板」 */}
+			{trustModalOpen && (
+				<div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+					<div className="bg-[#161b22] border border-[#30363d] rounded-xl max-w-3xl w-full p-6 space-y-6 shadow-2xl text-white my-8">
+						<div className="flex items-center justify-between border-b border-[#30363d] pb-4">
+							<div className="flex items-center gap-3">
+								<span className="text-3xl">{currentTL.icon}</span>
+								<div>
+									<h2 className="text-lg font-bold text-white flex items-center gap-2">
+										{currentTL.name}
+										{isAdmin && <span className="bg-amber-500/20 text-yellow-300 border border-amber-500/40 text-[10px] px-2 py-0.5 rounded-full font-bold">最高特权</span>}
+									</h2>
+									<p className="text-xs text-gray-400 mt-0.5">当前信任等级，持续活跃可解锁更高能力与专属荣誉</p>
+								</div>
+							</div>
+							<button onClick={() => setTrustModalOpen(false)} className="text-gray-400 hover:text-white p-1">
+								<X className="w-5 h-5" />
+							</button>
+						</div>
+
+						{/* 升级进度模块（绿色进度条） */}
+						<div className="bg-[#0d1117] border border-[#21262d] rounded-xl p-4 space-y-3.5">
+							<div className="flex items-center justify-between text-xs">
+								<span className="font-bold text-gray-200">
+									{userTrustLevel >= 3 ? '🎉 您已晋升至社区骨干 / 领袖层级' : '距离下一级 · TL' + (userTrustLevel + 1) + ' 进阶要求'}
+								</span>
+								<span className="bg-[#161b22] text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded text-[11px] font-bold">
+									进行中
+								</span>
+							</div>
+
+							<div className="space-y-2 text-xs">
+								<div>
+									<div className="flex justify-between text-[11px] mb-1">
+										<span className="text-gray-400">已发主题帖 ({userStats.posts_count} / 2)</span>
+										<span className={userStats.posts_count >= 2 ? 'text-emerald-400 font-bold' : 'text-gray-400'}>
+											{userStats.posts_count >= 2 ? '100% 已达标' : `${Math.min(100, Math.floor((userStats.posts_count / 2) * 100))}%`}
+										</span>
+									</div>
+									<div className="w-full bg-[#21262d] h-2 rounded-full overflow-hidden">
+										<div
+											style={{ width: `${Math.min(100, Math.max(10, Math.floor((userStats.posts_count / 2) * 100)))}%` }}
+											className="bg-emerald-500 h-full rounded-full transition-all"
+										/>
+									</div>
+								</div>
+
+								<div>
+									<div className="flex justify-between text-[11px] mb-1">
+										<span className="text-gray-400">参与回帖互动 ({userStats.comments_count} / 3)</span>
+										<span className={userStats.comments_count >= 3 ? 'text-emerald-400 font-bold' : 'text-gray-400'}>
+											{userStats.comments_count >= 3 ? '100% 已达标' : `${Math.min(100, Math.floor((userStats.comments_count / 3) * 100))}%`}
+										</span>
+									</div>
+									<div className="w-full bg-[#21262d] h-2 rounded-full overflow-hidden">
+										<div
+											style={{ width: `${Math.min(100, Math.max(10, Math.floor((userStats.comments_count / 3) * 100)))}%` }}
+											className="bg-emerald-500 h-full rounded-full transition-all"
+										/>
+									</div>
+								</div>
+
+								<div>
+									<div className="flex justify-between text-[11px] mb-1">
+										<span className="text-gray-400">积累论坛积分 ({userStats.points} / 20)</span>
+										<span className={userStats.points >= 20 ? 'text-emerald-400 font-bold' : 'text-gray-400'}>
+											{userStats.points >= 20 ? '100% 已达标' : `${Math.min(100, Math.floor((userStats.points / 20) * 100))}%`}
+										</span>
+									</div>
+									<div className="w-full bg-[#21262d] h-2 rounded-full overflow-hidden">
+										<div
+											style={{ width: `${Math.min(100, Math.max(10, Math.floor((userStats.points / 20) * 100)))}%` }}
+											className="bg-emerald-500 h-full rounded-full transition-all"
+										/>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						{/* 各等级条件一览卡片 */}
+						<div>
+							<h4 className="text-xs font-bold text-gray-300 mb-2.5">各等级成长条件一览</h4>
+							<div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+								{TRUST_LEVEL_META.map((meta, i) => {
+									const isCurrent = userTrustLevel === i;
+									const isCompleted = userTrustLevel > i;
+									return (
+										<div
+											key={i}
+											className={`p-3 rounded-lg border flex flex-col justify-between ${
+												isCurrent
+													? 'border-blue-500 bg-blue-500/10 shadow-md'
+													: 'border-[#30363d] bg-[#0d1117]'
+											}`}
+										>
+											<div>
+												<span className="text-xl block mb-1">{meta.icon}</span>
+												<span className="font-bold text-white block text-xs">{meta.name}</span>
+												<span className="text-[10px] text-gray-400 block mt-1 leading-tight">{meta.desc}</span>
+											</div>
+											<div className="mt-2.5">
+												{isCurrent && (
+													<span className="bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full block text-center">
+														当前等级
+													</span>
+												)}
+												{isCompleted && (
+													<span className="text-emerald-400 text-[10px] font-semibold flex items-center justify-center gap-0.5">
+														<CheckCircle2 className="w-3 h-3" /> 已达成
+													</span>
+												)}
+												{!isCurrent && !isCompleted && (
+													<span className="text-gray-500 text-[10px] block text-center">未解锁</span>
+												)}
+											</div>
+										</div>
+									);
+								})}
+							</div>
+						</div>
+
+						{/* 各等级能力解锁对比表格 */}
+						<div>
+							<h4 className="text-xs font-bold text-gray-300 mb-2">各等级能力解锁对比</h4>
+							<div className="border border-[#30363d] rounded-lg overflow-x-auto bg-[#0d1117]">
+								<table className="w-full text-xs text-left text-gray-300">
+									<thead className="bg-[#161b22] text-gray-400 border-b border-[#30363d] text-[11px]">
+										<tr>
+											<th className="py-2.5 px-3">能力特权</th>
+											<th className={`py-2.5 px-3 text-center ${userTrustLevel === 0 ? 'text-blue-400 font-bold bg-blue-950/40' : ''}`}>TL0 新访客</th>
+											<th className={`py-2.5 px-3 text-center ${userTrustLevel === 1 ? 'text-blue-400 font-bold bg-blue-950/40' : ''}`}>TL1 见习</th>
+											<th className={`py-2.5 px-3 text-center ${userTrustLevel === 2 ? 'text-blue-400 font-bold bg-blue-950/40' : ''}`}>TL2 正式成员</th>
+											<th className={`py-2.5 px-3 text-center ${userTrustLevel === 3 ? 'text-blue-400 font-bold bg-blue-950/40' : ''}`}>TL3 社区骨干</th>
+											<th className={`py-2.5 px-3 text-center ${userTrustLevel === 4 ? 'text-blue-400 font-bold bg-blue-950/40' : ''}`}>TL4 社区领袖</th>
+										</tr>
+									</thead>
+									<tbody className="divide-y divide-[#21262d] text-[11px]">
+										<tr>
+											<td className="py-2 px-3 font-medium text-white">浏览全站帖子</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+										</tr>
+										<tr>
+											<td className="py-2 px-3 font-medium text-white">发表交流回帖</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+										</tr>
+										<tr>
+											<td className="py-2 px-3 font-medium text-white">发布新主题帖</td>
+											<td className="py-2 px-3 text-center text-gray-500">—</td>
+											<td className="py-2 px-3 text-center text-blue-400 font-semibold">解锁</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+										</tr>
+										<tr>
+											<td className="py-2 px-3 font-medium text-white">截图直接 Ctrl+V 粘贴传图</td>
+											<td className="py-2 px-3 text-center text-gray-500">—</td>
+											<td className="py-2 px-3 text-center text-blue-400 font-semibold">解锁</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+										</tr>
+										<tr>
+											<td className="py-2 px-3 font-medium text-white">修改与编辑已发帖子</td>
+											<td className="py-2 px-3 text-center text-gray-500">—</td>
+											<td className="py-2 px-3 text-center text-gray-500">—</td>
+											<td className="py-2 px-3 text-center text-blue-400 font-semibold">解锁</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+										</tr>
+										<tr>
+											<td className="py-2 px-3 font-medium text-white">每日签到领高额翻倍积分</td>
+											<td className="py-2 px-3 text-center text-gray-500">—</td>
+											<td className="py-2 px-3 text-center text-gray-500">—</td>
+											<td className="py-2 px-3 text-center text-gray-500">—</td>
+											<td className="py-2 px-3 text-center text-blue-400 font-semibold">解锁</td>
+											<td className="py-2 px-3 text-center text-emerald-400 font-bold">✓</td>
+										</tr>
+									</tbody>
+								</table>
+							</div>
+						</div>
+
+						<div className="flex justify-end pt-2 border-t border-[#30363d]">
+							<Button size="sm" onClick={() => setTrustModalOpen(false)} className="bg-blue-600 hover:bg-blue-700 text-xs px-5">
+								知道了，继续活跃冲级
 							</Button>
 						</div>
 					</div>
