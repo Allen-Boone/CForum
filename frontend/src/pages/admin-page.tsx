@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiFetch, getSecurityHeaders, type Category } from '@/lib/api';
 import { getToken, getUser } from '@/lib/auth';
-import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown, ArrowUpDown, Gavel, Hammer, Plus, Trash2, FolderKanban, ChevronLeft, ChevronRight, Ban } from 'lucide-react';
+import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown, ArrowUpDown, Gavel, Hammer, Plus, Trash2, FolderKanban, ChevronLeft, ChevronRight, Ban, CheckSquare, Square } from 'lucide-react';
 
 interface SiteBadge {
 	id: number;
@@ -24,6 +24,9 @@ export function AdminPage() {
 		Array<{ id: number; email: string; username: string; role: string; verified: number; created_at: string; points?: number; title?: string; badges?: string; reg_ip?: string }>
 	>([]);
 
+	// 核心亮点：批量勾选用户 ID 列表
+	const [selectedUserIds, setSelectedUserIds] = React.useState<number[]>([]);
+
 	const [categories, setCategories] = React.useState<Array<Category & { sort_order?: number }>>([]);
 	const [newCatName, setNewCatName] = React.useState('');
 
@@ -35,11 +38,13 @@ export function AdminPage() {
 
 	const [sortOrder, setSortOrder] = React.useState<'desc' | 'asc'>('desc');
 
+	// 单人授勋弹窗
 	const [badgeModalOpen, setBadgeModalOpen] = React.useState(false);
 	const [targetUser, setTargetUser] = React.useState<{ id: number; username: string } | null>(null);
 	const [selectedBadges, setSelectedBadges] = React.useState<string[]>([]);
 	const [customBadgeInput, setCustomBadgeInput] = React.useState('');
 
+	// 全员一键授勋
 	const [batchModalOpen, setBatchModalOpen] = React.useState(false);
 	const [batchBadge, setBatchBadge] = React.useState('🥮 中秋月圆');
 	const [batchScope, setBatchScope] = React.useState<'all' | 'top100'>('all');
@@ -71,6 +76,7 @@ export function AdminPage() {
 	const refresh = React.useCallback(async () => {
 		setLoading(true);
 		setError('');
+		setSelectedUserIds([]);
 		try {
 			const [s, u] = await Promise.all([
 				apiFetch<{ users: number; posts: number; comments: number }>('/admin/stats', {
@@ -94,7 +100,63 @@ export function AdminPage() {
 		refresh();
 	}, [refresh]);
 
-	// 核心绝技：站长一键物理拉黑封死该 IP，全站拒止访问！
+	// 核心亮点：全选 / 全不选切换（站长本人物理级排除）
+	function handleToggleSelectAll() {
+		const selectableUsers = users.filter(u => u.id !== 1);
+		if (selectedUserIds.length === selectableUsers.length) {
+			setSelectedUserIds([]);
+		} else {
+			setSelectedUserIds(selectableUsers.map(u => u.id));
+		}
+	}
+
+	function handleToggleSelectUser(id: number) {
+		if (id === 1) return;
+		setSelectedUserIds(prev =>
+			prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+		);
+	}
+
+	// 核心亮点：批量彻底删除（从数据库直接物理粉碎）
+	async function handleBatchDelete() {
+		if (selectedUserIds.length === 0) return;
+		if (!confirm(`【站长核打击 · 批量彻底删除】\n确定要将选中的【${selectedUserIds.length} 位会员】从数据库物理抹除吗？\n\n注意：此操作不可恢复，对应垃圾小号将被彻底粉碎！`)) return;
+
+		try {
+			const res = await apiFetch<{ success: boolean; count: number }>('/admin/users/batch-delete', {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify({ ids: selectedUserIds })
+			});
+			if (res.success) {
+				alert(`🎉 批量删除成功！已成功抹杀 ${res.count} 个违规小号！`);
+				refresh();
+			}
+		} catch (err: any) {
+			alert('批量删除失败: ' + err.message);
+		}
+	}
+
+	// 核心亮点：批量关押进小黑屋
+	async function handleBatchBanish() {
+		if (selectedUserIds.length === 0) return;
+		if (!confirm(`【批量关入小黑屋】\n确定要将选中的【${selectedUserIds.length} 位会员】集体关押进小黑屋吗？`)) return;
+
+		try {
+			const res = await apiFetch<{ success: boolean; count: number }>('/admin/users/batch-banish', {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify({ ids: selectedUserIds, reason: '站长批量处分脚本小号' })
+			});
+			if (res.success) {
+				alert(`⚖️ 批量执法完成！已将 ${res.count} 位用户集体押送进小黑屋！`);
+				refresh();
+			}
+		} catch (err: any) {
+			alert('批量关押失败: ' + err.message);
+		}
+	}
+
 	async function handleBanIp(ip?: string, username?: string) {
 		if (!ip || ip === '127.0.0.1') return alert('暂无该用户的有效外部真实IP！');
 		if (!confirm(`【站长物理级封禁 IP】\n确定要将 IP【${ip}】（用户：${username}）永久拉黑吗？\n\n封禁后，该 IP 下的所有设备将被 Cloudflare 彻底拒绝访问自由论坛，名下所有小号将同步关入小黑屋！`)) return;
@@ -479,6 +541,9 @@ export function AdminPage() {
 		return list;
 	}, [users, sortOrder]);
 
+	const selectableCount = users.filter(u => u.id !== 1).length;
+	const isAllSelected = selectableCount > 0 && selectedUserIds.length === selectableCount;
+
 	return (
 		<PageShell>
 			<div className="space-y-6">
@@ -488,7 +553,7 @@ export function AdminPage() {
 							<Shield className="w-5 h-5 text-blue-500" />
 							自由论坛 · 管理控制台
 						</h1>
-						<p className="text-xs text-gray-400 mt-1">站点统计、板块管理、全站用户、IP封杀、全员大授勋与快捷充值中心</p>
+						<p className="text-xs text-gray-400 mt-1">站点统计、板块管理、全站用户、批量歼灭、全员大授勋与快捷充值中心</p>
 					</div>
 
 					<div className="flex items-center gap-2 flex-wrap">
@@ -629,13 +694,42 @@ export function AdminPage() {
 					</CardContent>
 				</Card>
 
-				{/* 会员列表与管理操作（核心亮点：展示真实注册 IP，并配备【🚫 封IP】神权按钮） */}
+				{/* 会员列表与管理操作（核心亮点：支持一键全选、批量勾选物理粉碎删除、批量关押！） */}
 				<Card className="bg-[#161b22] border-[#30363d]">
-					<CardHeader className="py-3 px-4 border-b border-[#30363d] flex flex-row items-center justify-between">
-						<CardTitle className="text-sm text-white flex items-center gap-1.5">
-							<Users className="w-4 h-4 text-blue-400" />
-							会员管理列表（共 {users.length} 位成员 · 含 IP 溯源与封禁）
-						</CardTitle>
+					<CardHeader className="py-3 px-4 border-b border-[#30363d] flex flex-row items-center justify-between flex-wrap gap-2">
+						<div className="flex items-center gap-3">
+							<CardTitle className="text-sm text-white flex items-center gap-1.5">
+								<Users className="w-4 h-4 text-blue-400" />
+								会员管理列表（共 {users.length} 位成员）
+							</CardTitle>
+
+							{/* 核心亮点：只要勾选了任何用户，立刻展现批量操作武器库！ */}
+							{selectedUserIds.length > 0 && (
+								<div className="flex items-center gap-2 animate-in fade-in zoom-in duration-150">
+									<span className="text-xs text-amber-300 font-bold bg-amber-500/20 border border-amber-500/40 px-2 py-0.5 rounded">
+										已选 {selectedUserIds.length} 人
+									</span>
+									<Button
+										size="sm"
+										onClick={handleBatchDelete}
+										className="bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs h-7 px-3 shadow-md"
+									>
+										<Trash2 className="w-3.5 h-3.5 mr-1" />
+										批量物理删除
+									</Button>
+									<Button
+										size="sm"
+										variant="outline"
+										onClick={handleBatchBanish}
+										className="border-rose-500 text-rose-300 hover:bg-rose-500/20 text-xs h-7 px-2.5"
+									>
+										<Gavel className="w-3.5 h-3.5 mr-1" />
+										批量关押
+									</Button>
+								</div>
+							)}
+						</div>
+
 						<Button
 							size="sm"
 							variant="ghost"
@@ -647,13 +741,27 @@ export function AdminPage() {
 						</Button>
 					</CardHeader>
 					<CardContent className="p-0 overflow-x-auto">
-						<table className="w-full text-xs text-left text-gray-300 min-w-[850px]">
+						<table className="w-full text-xs text-left text-gray-300 min-w-[880px]">
 							<thead className="bg-[#0d1117] text-gray-400 border-b border-[#30363d]">
 								<tr>
-									<th className="py-2.5 px-4 w-16 text-center">序号</th>
+									{/* 核心亮点：表头一键全选复选框！ */}
+									<th className="py-2.5 px-3 w-12 text-center select-none">
+										<button
+											type="button"
+											onClick={handleToggleSelectAll}
+											className="p-1 hover:text-white"
+											title="一键全选 / 取消全选"
+										>
+											{isAllSelected ? (
+												<CheckSquare className="w-4 h-4 text-emerald-400" />
+											) : (
+												<Square className="w-4 h-4 text-gray-500" />
+											)}
+										</button>
+									</th>
+									<th className="py-2.5 px-3 w-14 text-center">序号</th>
 									<th className="py-2.5 px-4 max-w-[150px]">用户名</th>
 									<th className="py-2.5 px-4 max-w-[180px]">邮箱</th>
-									{/* 站长专属 IP 显示列 */}
 									<th className="py-2.5 px-4 w-28">注册 IP 溯源</th>
 									<th className="py-2.5 px-4">称号与勋章</th>
 									<th className="py-2.5 px-4 w-20">当前积分</th>
@@ -665,10 +773,29 @@ export function AdminPage() {
 								{sortedUsers.map((u, index) => {
 									const userBadges = parseUserBadges(u.badges);
 									const sequenceNumber = sortOrder === 'desc' ? users.length - index : index + 1;
+									const isChecked = selectedUserIds.includes(u.id);
 
 									return (
-										<tr key={u.id} className="hover:bg-[#1c2128]">
-											<td className="py-3 px-4 text-center font-mono font-bold text-gray-400">
+										<tr key={u.id} className={`transition-colors ${isChecked ? 'bg-blue-950/30' : 'hover:bg-[#1c2128]'}`}>
+											{/* 勾选框：站长账号免疫 */}
+											<td className="py-3 px-3 text-center select-none">
+												{u.id !== 1 ? (
+													<button
+														type="button"
+														onClick={() => handleToggleSelectUser(u.id)}
+														className="p-1"
+													>
+														{isChecked ? (
+															<CheckSquare className="w-4 h-4 text-emerald-400" />
+														) : (
+															<Square className="w-4 h-4 text-gray-600 hover:text-gray-300" />
+														)}
+													</button>
+												) : (
+													<span title="站长受保护" className="text-[10px] text-amber-500 font-bold">🛡️</span>
+												)}
+											</td>
+											<td className="py-3 px-3 text-center font-mono font-bold text-gray-400">
 												#{sequenceNumber}
 											</td>
 											<td className="py-3 px-4 font-bold text-white max-w-[150px]">
@@ -684,7 +811,6 @@ export function AdminPage() {
 													{u.email}
 												</span>
 											</td>
-											{/* 真实 IP 字段：仅站长可见 */}
 											<td className="py-3 px-4 font-mono text-[11px] text-cyan-400 whitespace-nowrap">
 												{u.reg_ip ? (
 													<span title="该用户的真实客户端IP">{u.reg_ip}</span>
@@ -723,7 +849,6 @@ export function AdminPage() {
 											</td>
 											<td className="py-3 px-4 text-right whitespace-nowrap">
 												<div className="flex items-center justify-end gap-1 flex-nowrap">
-													{/* 核心亮点：站长一键封杀 IP 按钮！ */}
 													{u.id !== 1 && u.reg_ip && (
 														<Button
 															size="sm"
