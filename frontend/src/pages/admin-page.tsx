@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiFetch, getSecurityHeaders, type Category } from '@/lib/api';
 import { getToken, getUser } from '@/lib/auth';
-import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown, ArrowUpDown, Gavel, Hammer, Plus, Trash2, FolderKanban } from 'lucide-react';
+import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown, ArrowUpDown, Gavel, Hammer, Plus, Trash2, FolderKanban, ChevronLeft, ChevronRight, ArrowLeftRight } from 'lucide-react';
 
 interface SiteBadge {
 	id: number;
@@ -24,8 +24,8 @@ export function AdminPage() {
 		Array<{ id: number; email: string; username: string; role: string; verified: number; created_at: string; points?: number; title?: string; badges?: string }>
 	>([]);
 
-	// 动态板块分类管理
-	const [categories, setCategories] = React.useState<Category[]>([]);
+	// 动态板块分类与排序管理
+	const [categories, setCategories] = React.useState<Array<Category & { sort_order?: number }>>([]);
 	const [newCatName, setNewCatName] = React.useState('');
 
 	// 勋章军械库
@@ -67,7 +67,7 @@ export function AdminPage() {
 
 	const loadCategories = React.useCallback(async () => {
 		try {
-			const cats = await apiFetch<Category[]>('/categories');
+			const cats = await apiFetch<any[]>('/categories');
 			if (cats) setCategories(cats);
 		} catch (_) {}
 	}, []);
@@ -98,7 +98,62 @@ export function AdminPage() {
 		refresh();
 	}, [refresh]);
 
-	// 核心亮点 1：站长在后台创建新板块
+	// 核心亮点：站长前移/后移板块（一键交换位置）
+	async function handleMoveOrder(index: number, direction: 'left' | 'right') {
+		const targetIndex = direction === 'left' ? index - 1 : index + 1;
+		if (targetIndex < 0 || targetIndex >= categories.length) return;
+
+		const current = categories[index];
+		const neighbor = categories[targetIndex];
+
+		const currentOrder = current.sort_order ?? current.id;
+		const neighborOrder = neighbor.sort_order ?? neighbor.id;
+
+		// 如果当前两者的 order 碰巧一样，强制拉开间距
+		const newCurrentOrder = neighborOrder;
+		const newNeighborOrder = currentOrder === neighborOrder ? neighborOrder + 1 : currentOrder;
+
+		try {
+			await Promise.all([
+				apiFetch(`/admin/categories/${current.id}/sort`, {
+					method: 'POST',
+					headers: getSecurityHeaders('POST'),
+					body: JSON.stringify({ sort_order: newCurrentOrder })
+				}),
+				apiFetch(`/admin/categories/${neighbor.id}/sort`, {
+					method: 'POST',
+					headers: getSecurityHeaders('POST'),
+					body: JSON.stringify({ sort_order: newNeighborOrder })
+				})
+			]);
+			loadCategories();
+		} catch (err: any) {
+			alert('调整排序失败: ' + err.message);
+		}
+	}
+
+	// 核心亮点：直接输入数字自定义排序权重
+	async function handleCustomSort(catId: number, catName: string, currentOrder: number) {
+		const input = prompt(
+			`【自定义板块排序编号】\n板块：《${catName}》\n当前排序编号：${currentOrder}\n\n请输入新的排序序号（数字越小越靠前，如输入 1 排在最前面）：`,
+			String(currentOrder)
+		);
+		if (!input) return;
+		const orderNum = parseInt(input.trim());
+		if (isNaN(orderNum)) return alert('请输入有效的整数序号！');
+
+		try {
+			await apiFetch(`/admin/categories/${catId}/sort`, {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify({ sort_order: orderNum })
+			});
+			loadCategories();
+		} catch (err: any) {
+			alert('调整失败: ' + err.message);
+		}
+	}
+
 	async function handleCreateCategory(e: React.FormEvent) {
 		e.preventDefault();
 		if (!newCatName.trim()) return alert('请输入板块名称！');
@@ -116,7 +171,6 @@ export function AdminPage() {
 		}
 	}
 
-	// 核心亮点 2：站长在后台修改板块名字
 	async function handleRenameCategory(catId: number, oldName: string) {
 		const next = prompt(`【修改板块名称】\n当前名称：${oldName}\n\n请输入新的板块名称：`, oldName);
 		if (!next || next.trim() === oldName) return;
@@ -133,7 +187,6 @@ export function AdminPage() {
 		}
 	}
 
-	// 核心亮点 3：站长在后台删除板块
 	async function handleDeleteCategory(catId: number, catName: string) {
 		if (catId === 9) return alert('【公告】板块为官方专区，不可删除！');
 		if (!confirm(`确定要删除板块【${catName}】吗？\n（该板块下的帖子会自动安全移入【茶水间】）`)) return;
@@ -479,12 +532,12 @@ export function AdminPage() {
 					</Card>
 				</div>
 
-				{/* 核心亮点：全站板块分类可视化管理卡片 */}
+				{/* 核心亮点：全站板块自由排序、改名、删除管理卡片 */}
 				<Card className="bg-[#161b22] border-[#30363d]">
 					<CardHeader className="py-3 px-4 border-b border-[#30363d] flex flex-row items-center justify-between">
 						<CardTitle className="text-sm text-white flex items-center gap-1.5">
 							<FolderKanban className="w-4 h-4 text-emerald-400" />
-							社区板块分类管理（添加新板块、改名、删除）
+							社区板块分类与自由排序管理（支持左右箭头一键调序、改名、删除）
 						</CardTitle>
 					</CardHeader>
 					<CardContent className="p-4 space-y-4">
@@ -502,20 +555,54 @@ export function AdminPage() {
 							</Button>
 						</form>
 
-						{/* 现有板块列表 */}
-						<div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
-							{categories.map(c => (
-								<div key={c.id} className="p-2.5 rounded-lg border border-[#30363d] bg-[#0d1117] flex items-center justify-between gap-2 text-xs">
-									<span className="font-bold text-gray-200 truncate">{c.name}</span>
-									<div className="flex items-center gap-1">
+						{/* 自由调序板块列表（按顺序排列，带左右箭头和数字调整） */}
+						<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+							{categories.map((c, idx) => (
+								<div key={c.id} className="p-3 rounded-lg border border-[#30363d] bg-[#0d1117] flex items-center justify-between gap-2 text-xs">
+									<div className="flex items-center gap-2 min-w-0">
+										<button
+											type="button"
+											onClick={() => handleCustomSort(c.id, c.name, c.sort_order ?? c.id)}
+											className="bg-[#161b22] hover:bg-[#21262d] text-gray-400 hover:text-amber-400 font-mono font-bold text-[10px] px-1.5 py-0.5 rounded border border-[#30363d] transition-colors"
+											title="点击直接输入排序编号"
+										>
+											#{idx + 1}
+										</button>
+										<span className="font-bold text-gray-200 truncate">{c.name}</span>
+									</div>
+
+									<div className="flex items-center gap-1 flex-shrink-0">
+										{/* 一键前移箭头 */}
+										<button
+											type="button"
+											disabled={idx === 0}
+											onClick={() => handleMoveOrder(idx, 'left')}
+											className="text-gray-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none p-1 bg-[#161b22] rounded border border-[#30363d]"
+											title="向前移动一位"
+										>
+											<ChevronLeft className="w-3.5 h-3.5" />
+										</button>
+
+										{/* 一键后移箭头 */}
+										<button
+											type="button"
+											disabled={idx === categories.length - 1}
+											onClick={() => handleMoveOrder(idx, 'right')}
+											className="text-gray-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none p-1 bg-[#161b22] rounded border border-[#30363d]"
+											title="向后移动一位"
+										>
+											<ChevronRight className="w-3.5 h-3.5" />
+										</button>
+
 										<button
 											type="button"
 											onClick={() => handleRenameCategory(c.id, c.name)}
 											className="text-gray-400 hover:text-sky-400 p-1"
 											title="修改名称"
 										>
-											<Pencil className="w-3 h-3" />
+											<Pencil className="w-3.5 h-3.5" />
 										</button>
+
 										{c.id !== 9 && (
 											<button
 												type="button"
@@ -523,7 +610,7 @@ export function AdminPage() {
 												className="text-gray-400 hover:text-red-400 p-1"
 												title="删除板块"
 											>
-												<Trash2 className="w-3 h-3" />
+												<Trash2 className="w-3.5 h-3.5" />
 											</button>
 										)}
 									</div>
@@ -589,8 +676,8 @@ export function AdminPage() {
 													<div className="flex flex-wrap gap-1">
 														{userBadges.map((b, bi) => (
 															<span key={bi} className="bg-amber-500/15 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded text-[10px] font-bold">
-																{b}
-															</span>
+												{b}
+											</span>
 														))}
 													</div>
 												)}
