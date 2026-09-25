@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiFetch, getSecurityHeaders, type Category } from '@/lib/api';
 import { getToken, getUser } from '@/lib/auth';
-import { Coins, RefreshCw, Shield, Users, Medal, X, Check } from 'lucide-react';
+import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles } from 'lucide-react';
 
 const PRESET_BADGES = [
 	{ name: '🛡️ 白帽守护者', desc: '发现重大漏洞、守护社区安全', color: 'border-blue-500 bg-blue-500/10 text-blue-300' },
@@ -27,10 +27,17 @@ export function AdminPage() {
 		Array<{ id: number; email: string; username: string; role: string; verified: number; created_at: string; points?: number; title?: string; badges?: string }>
 	>([]);
 
+	// 单人授勋弹窗
 	const [badgeModalOpen, setBadgeModalOpen] = React.useState(false);
 	const [targetUser, setTargetUser] = React.useState<{ id: number; username: string } | null>(null);
 	const [selectedBadges, setSelectedBadges] = React.useState<string[]>([]);
 	const [customBadgeInput, setCustomBadgeInput] = React.useState('');
+
+	// 全员一键大授勋弹窗
+	const [batchModalOpen, setBatchModalOpen] = React.useState(false);
+	const [batchBadge, setBatchBadge] = React.useState('🥮 中秋月圆');
+	const [batchScope, setBatchScope] = React.useState<'all' | 'top100'>('all');
+	const [batchLoading, setBatchLoading] = React.useState(false);
 
 	React.useEffect(() => {
 		if (!token) window.location.href = '/login';
@@ -132,6 +139,31 @@ export function AdminPage() {
 		}
 	}
 
+	// 站长神权：一键全员批量大授勋！
+	async function handleExecuteBatchBadge() {
+		if (!confirm(`确定要为【${batchScope === 'all' ? '全站所有注册会员' : '前 100 位创站元老'}】一键批量佩戴【${batchBadge}】勋章吗？`)) return;
+		setBatchLoading(true);
+		try {
+			const res = await apiFetch<{ success: boolean; affected: number; badge: string }>('/admin/users/batch-badges', {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify({
+					badge: batchBadge,
+					scope: batchScope
+				})
+			});
+			if (res.success) {
+				alert(`👑 全员大授勋完成！已成功为 ${res.affected} 位会员一键佩戴【${res.badge}】专属荣誉！`);
+				setBatchModalOpen(false);
+				refresh();
+			}
+		} catch (err: any) {
+			alert('批量授勋失败: ' + err.message);
+		} finally {
+			setBatchLoading(false);
+		}
+	}
+
 	function parseUserBadges(badgesStr?: string): string[] {
 		if (!badgesStr) return [];
 		try {
@@ -144,17 +176,30 @@ export function AdminPage() {
 	return (
 		<PageShell>
 			<div className="space-y-6">
-				<div className="flex items-center justify-between border-b border-[#30363d] pb-4">
+				<div className="flex items-center justify-between border-b border-[#30363d] pb-4 flex-wrap gap-3">
 					<div>
 						<h1 className="text-xl font-bold text-white flex items-center gap-2">
 							<Shield className="w-5 h-5 text-blue-500" />
 							自由论坛 · 管理控制台
 						</h1>
-						<p className="text-xs text-gray-400 mt-1">站点统计、全站用户、可视化授勋与快捷充值中心</p>
+						<p className="text-xs text-gray-400 mt-1">站点统计、全站用户、全员大授勋与快捷充值中心</p>
 					</div>
-					<Button size="sm" variant="outline" onClick={refresh} disabled={loading} className="text-xs border-[#30363d]">
-						<RefreshCw className={`w-3.5 h-3.5 mr-1 ${loading ? 'animate-spin' : ''}`} /> 刷新
-					</Button>
+
+					<div className="flex items-center gap-2">
+						{/* 核心亮点：全员一键大授勋快捷入口 */}
+						<Button
+							size="sm"
+							onClick={() => setBatchModalOpen(true)}
+							className="bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-700 hover:to-yellow-700 text-black font-extrabold text-xs h-8 px-3 shadow-md"
+						>
+							<Sparkles className="w-3.5 h-3.5 mr-1" />
+							👑 全员一键大授勋
+						</Button>
+
+						<Button size="sm" variant="outline" onClick={refresh} disabled={loading} className="text-xs border-[#30363d] h-8">
+							<RefreshCw className={`w-3.5 h-3.5 mr-1 ${loading ? 'animate-spin' : ''}`} /> 刷新
+						</Button>
+					</div>
 				</div>
 
 				{error && <div className="p-3 bg-red-900/30 border border-red-800 text-red-200 text-xs rounded">{error}</div>}
@@ -269,7 +314,7 @@ export function AdminPage() {
 				</Card>
 			</div>
 
-			{/* 修复后的全景可视化授勋卡片 */}
+			{/* 弹窗 1：单人精细化授勋弹窗 */}
 			{badgeModalOpen && targetUser && (
 				<div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
 					<div className="bg-[#161b22] border border-[#30363d] rounded-xl max-w-lg w-full p-5 space-y-4 shadow-2xl text-white">
@@ -283,7 +328,6 @@ export function AdminPage() {
 							</button>
 						</div>
 
-						{/* 预设勋章网格 */}
 						<div>
 							<span className="text-xs text-gray-400 block mb-2 font-medium">点击勋章直接佩戴 / 摘下：</span>
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -312,7 +356,6 @@ export function AdminPage() {
 							</div>
 						</div>
 
-						{/* 自定义输入框（使用原生无依赖 input，杜绝任何崩溃报错） */}
 						<div className="space-y-1.5 pt-1 border-t border-[#21262d]">
 							<span className="text-xs text-gray-400">发明新的专属勋章（可带 Emoji 图标）：</span>
 							<div className="flex gap-2">
@@ -329,7 +372,6 @@ export function AdminPage() {
 							</div>
 						</div>
 
-						{/* 选中的勋章列表预览 */}
 						<div className="bg-[#0d1117] p-2.5 rounded-md border border-[#21262d]">
 							<span className="text-[11px] text-gray-400 block mb-1.5">最终授予佩戴的勋章：</span>
 							{selectedBadges.length === 0 ? (
@@ -352,6 +394,87 @@ export function AdminPage() {
 							</Button>
 							<Button type="button" size="sm" onClick={saveBadges} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-5">
 								确认保存授勋
+							</Button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* 弹窗 2：站长专属 · 全员一键大授勋弹窗（解决手点抽筋的神器！） */}
+			{batchModalOpen && (
+				<div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+					<div className="bg-[#161b22] border border-amber-500/40 rounded-xl max-w-md w-full p-5 space-y-4 shadow-2xl text-white">
+						<div className="flex items-center justify-between border-b border-[#30363d] pb-3">
+							<div className="flex items-center gap-2">
+								<Sparkles className="w-5 h-5 text-amber-400" />
+								<h3 className="font-bold text-sm text-amber-300">👑 全员一键大授勋 · 普天同庆</h3>
+							</div>
+							<button onClick={() => setBatchModalOpen(false)} className="text-gray-400 hover:text-white p-1">
+								<X className="w-4 h-4" />
+							</button>
+						</div>
+
+						<div className="space-y-3 text-xs">
+							<div>
+								<span className="text-gray-400 block mb-1.5 font-medium">1. 选择批量授予的专属荣誉勋章：</span>
+								<select
+									value={batchBadge}
+									onChange={e => setBatchBadge(e.target.value)}
+									className="w-full bg-[#0d1117] border border-[#30363d] text-white rounded p-2 text-xs outline-none focus:border-amber-500 font-bold"
+								>
+									{PRESET_BADGES.map((b, i) => (
+										<option key={i} value={b.name}>{b.name}（{b.desc}）</option>
+									))}
+								</select>
+							</div>
+
+							<div>
+								<span className="text-gray-400 block mb-1.5 font-medium">2. 授勋受众范围：</span>
+								<div className="grid grid-cols-2 gap-2">
+									<button
+										type="button"
+										onClick={() => setBatchScope('all')}
+										className={`p-2.5 rounded border text-xs font-bold transition-all ${
+											batchScope === 'all'
+												? 'border-amber-500 bg-amber-500/20 text-amber-300'
+												: 'border-[#30363d] bg-[#0d1117] text-gray-400'
+										}`}
+									>
+										🎉 全站所有注册会员
+									</button>
+									<button
+										type="button"
+										onClick={() => setBatchScope('top100')}
+										className={`p-2.5 rounded border text-xs font-bold transition-all ${
+											batchScope === 'top100'
+												? 'border-amber-500 bg-amber-500/20 text-amber-300'
+												: 'border-[#30363d] bg-[#0d1117] text-gray-400'
+										}`}
+									>
+										🎖️ 前 100 位创站元老
+									</button>
+								</div>
+							</div>
+
+							<div className="bg-[#0d1117] p-3 rounded border border-amber-500/20 text-[11px] text-gray-400 leading-relaxed">
+								💡 <strong>使用场景说明：</strong><br />
+								• 遇上中秋/春节/五一等重大节日，直接选对应勋章，点一下全员集体佩戴！<br />
+								• 系统会自动跳过已经佩戴过的用户，绝不重复添加，高效优雅！
+							</div>
+						</div>
+
+						<div className="flex items-center justify-end gap-2 pt-2 border-t border-[#30363d]">
+							<Button type="button" size="sm" variant="ghost" onClick={() => setBatchModalOpen(false)} className="text-xs text-gray-400">
+								取消
+							</Button>
+							<Button
+								type="button"
+								size="sm"
+								disabled={batchLoading}
+								onClick={handleExecuteBatchBadge}
+								className="bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-700 hover:to-yellow-700 text-black font-extrabold text-xs px-5 shadow-lg"
+							>
+								{batchLoading ? '正在全员大授勋...' : '立即一键全员佩戴'}
 							</Button>
 						</div>
 					</div>
