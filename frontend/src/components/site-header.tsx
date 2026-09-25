@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { getUser, logout, type User } from '@/lib/auth';
 import { getTheme, toggleTheme, type Theme } from '@/lib/theme';
-import { Moon, Settings, Shield, Sun, LogIn, UserPlus, LogOut } from 'lucide-react';
+import { Moon, Settings, Shield, Sun, LogIn, UserPlus, LogOut, Home } from 'lucide-react';
 
 export function SiteHeader({
 	currentUser,
@@ -13,6 +13,7 @@ export function SiteHeader({
 }) {
 	const user = currentUser ?? getUser();
 	const [theme, setTheme] = React.useState<Theme>(() => getTheme());
+	const [isInAdmin, setIsInAdmin] = React.useState(false);
 
 	React.useEffect(() => {
 		function onThemeChange(e: Event) {
@@ -21,12 +22,12 @@ export function SiteHeader({
 		}
 		window.addEventListener('theme-change', onThemeChange as any);
 		setTheme(getTheme());
+		setIsInAdmin(window.location.pathname.startsWith('/admin'));
 		return () => window.removeEventListener('theme-change', onThemeChange as any);
 	}, []);
 
 	return (
 		<header className="w-full border-b border-[#22272e] bg-[#0d1117] text-white sticky top-0 z-50">
-			{/* 顶栏极致留白：左侧品牌Logo，右侧管理与用户，告别重复与拥挤 */}
 			<div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
 				{/* 左侧 LOGO 与 网站名 */}
 				<a href="/" className="flex items-center gap-2.5 group">
@@ -51,14 +52,25 @@ export function SiteHeader({
 
 					{user ? (
 						<div className="flex items-center gap-3">
+							{/* 智能切换：在后台显示“返回首页”，在前台显示“管理后台” */}
 							{user.role === 'admin' && (
-								<Button asChild variant="outline" size="sm" className="border-blue-600 text-blue-400 hover:bg-blue-600/20 h-7 text-xs">
-									<a href="/admin">
-										<Shield className="h-3.5 w-3.5 mr-1" />
-										管理后台
-									</a>
-								</Button>
+								isInAdmin ? (
+									<Button asChild variant="outline" size="sm" className="border-emerald-600 text-emerald-400 hover:bg-emerald-600/20 h-7 text-xs">
+										<a href="/">
+											<Home className="h-3.5 w-3.5 mr-1" />
+											返回前台首页
+										</a>
+									</Button>
+								) : (
+									<Button asChild variant="outline" size="sm" className="border-blue-600 text-blue-400 hover:bg-blue-600/20 h-7 text-xs">
+										<a href="/admin">
+											<Shield className="h-3.5 w-3.5 mr-1" />
+											管理后台
+										</a>
+									</Button>
+								)
 							)}
+
 							<div className="flex items-center gap-2 bg-[#161b22] px-2.5 py-1 rounded-full border border-gray-700">
 								<span className="text-xs font-semibold text-gray-200">{user.username}</span>
 							</div>
@@ -84,7 +96,7 @@ export function SiteHeader({
 								<a href="/login"><LogIn className="h-4 w-4 mr-1" /> 登录</a>
 							</Button>
 							<Button asChild size="sm" className="bg-blue-600 hover:bg-blue-700 text-white font-medium">
-								<a href="/register"><UserPlus className="h-4 w-4 mr-1" /> 注册</a>
+								<UserPlus className="h-4 w-4 mr-1" /> 注册</a>
 							</Button>
 						</div>
 					)}
