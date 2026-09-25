@@ -189,7 +189,7 @@ Sitemap: https://blog.t20.de5.net/sitemap.xml
 			}
 		}
 
-		// GET /api/categories (严格按照站长设定的 sort_order 升序排列！)
+		// GET /api/categories
 		if (url.pathname === '/api/categories' && method === 'GET') {
 			try {
 				await ensureColumns();
@@ -200,7 +200,7 @@ Sitemap: https://blog.t20.de5.net/sitemap.xml
 			}
 		}
 
-		// POST /api/admin/categories (新增板块)
+		// POST /api/admin/categories
 		if (url.pathname === '/api/admin/categories' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -221,7 +221,7 @@ Sitemap: https://blog.t20.de5.net/sitemap.xml
 			}
 		}
 
-		// POST /api/admin/categories/:id/sort (核心亮点：站长自由调整板块排序位置！)
+		// POST /api/admin/categories/:id/sort
 		if (url.pathname.match(/^\/api\/admin\/categories\/\d+\/sort$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -241,7 +241,7 @@ Sitemap: https://blog.t20.de5.net/sitemap.xml
 			}
 		}
 
-		// PUT /api/admin/categories/:id (修改板块名称)
+		// PUT /api/admin/categories/:id
 		if (url.pathname.match(/^\/api\/admin\/categories\/\d+$/) && method === 'PUT') {
 			try {
 				const userPayload = await authenticate(request);
@@ -259,7 +259,7 @@ Sitemap: https://blog.t20.de5.net/sitemap.xml
 			}
 		}
 
-		// DELETE /api/admin/categories/:id (删除板块)
+		// DELETE /api/admin/categories/:id
 		if (url.pathname.match(/^\/api\/admin\/categories\/\d+$/) && method === 'DELETE') {
 			try {
 				const userPayload = await authenticate(request);
@@ -413,11 +413,22 @@ Sitemap: https://blog.t20.de5.net/sitemap.xml
 			}
 		}
 
-		// POST /api/user/avatar
+		// POST /api/user/avatar (加入用户名长度防护，严惩长名炸房！)
 		if (url.pathname === '/api/user/avatar' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
 				const body = await request.json() as any;
+
+				if (body.username !== undefined) {
+					const newName = String(body.username || '').trim();
+					if (newName.length < 2 || newName.length > 16) {
+						return jsonResponse({ error: '用户名长度须在 2 到 16 个字符之间！' }, 400);
+					}
+					if (hasRestrictedKeywords(newName)) {
+						return jsonResponse({ error: '该用户名包含系统官方保留词，禁止使用！' }, 400);
+					}
+					await env.cforum_db.prepare('UPDATE users SET username = ? WHERE id = ?').bind(newName, userPayload.id).run();
+				}
 
 				if (body.avatar_url !== undefined) {
 					await env.cforum_db.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').bind(body.avatar_url, userPayload.id).run();
