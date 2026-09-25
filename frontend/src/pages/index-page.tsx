@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Gift } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Gift, Flame, Zap } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -161,7 +161,10 @@ export function IndexPage() {
 	const [selectedCategory, setSelectedCategory] = React.useState<string>('all');
 	const [posts, setPosts] = React.useState<Array<Post & { badge?: string | null; reward_points?: number; author_badges?: string }>>([]);
 	const [loading, setLoading] = React.useState<boolean>(true);
-	const [activeTab, setActiveTab] = React.useState<'comment' | 'post' | 'featured'>('comment');
+
+	// 核心升级：前置【最新回复】与【最新发布】，并独立单列【站长推荐】！
+	const [activeTab, setActiveTab] = React.useState<'latest_reply' | 'latest_post' | 'featured' | 'recommend' | 'original'>('latest_reply');
+
 	const [showEditor, setShowEditor] = React.useState<boolean>(false);
 	const [newTitle, setNewTitle] = React.useState('');
 	const [newContent, setNewContent] = React.useState('');
@@ -441,10 +444,9 @@ export function IndexPage() {
 		}
 	}
 
-	// 独立功能 1：纯粹授勋（只改勋章标签，绝对不碰任何积分，彻底防刷！）
 	async function handleSetBadgeOnly(postId: number, authorName: string) {
 		const choice = prompt(
-			`【站长帖子授勋】（纯勋章标识，不增加积分）\n正在为作者【${authorName}】的帖子设置荣誉标识：\n\n1 = 💎 精华\n2 = 🔥 推荐\n3 = 🏆 神帖\n4 = ✨ 原创\n0 = 取消勋章\n\n请输入数字：`,
+			`【站长帖子授勋】（纯勋章标识，不增加积分）\n正在为作者【${authorName}】设置荣誉标识：\n\n1 = 💎 精华\n2 = 🔥 推荐\n3 = 🏆 神帖\n4 = ✨ 原创\n0 = 取消勋章\n\n请输入数字：`,
 			'1'
 		);
 		if (choice === null) return;
@@ -469,7 +471,6 @@ export function IndexPage() {
 		}
 	}
 
-	// 独立功能 2：专享站长打赏（站长自主决定赏多少积分，杜绝误操作！）
 	async function handleRewardPost(postId: number, authorName: string) {
 		const input = prompt(
 			`【站长打赏优质帖子】\n作者：${authorName}\n\n请输入要奖励给作者的积分数值（如 20、50、100）：`,
@@ -524,8 +525,12 @@ export function IndexPage() {
 	}
 
 	const navPills = [{ id: 'all', name: '全部主题' }, ...DEFAULT_CATEGORIES.map(c => ({ id: String(c.id), name: c.name }))];
+
+	// 五大独立专区筛选
 	const filteredPosts = posts.filter(p => {
-		if (activeTab === 'featured' && !p.badge) return false;
+		if (activeTab === 'featured' && p.badge !== '精华' && p.badge !== '神帖') return false;
+		if (activeTab === 'recommend' && p.badge !== '推荐') return false;
+		if (activeTab === 'original' && p.badge !== '原创') return false;
 		if (selectedCategory === 'all') return true;
 		return String(p.category_id) === selectedCategory;
 	});
@@ -560,17 +565,58 @@ export function IndexPage() {
 
 			<div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
 				<div className="lg:col-span-9 space-y-4">
-					<div className="flex items-center justify-between border-b border-[#30363d] pb-2">
-						<div className="flex items-center gap-4 text-xs font-semibold">
-							<button onClick={() => setActiveTab('comment')} className={`pb-1 ${activeTab === 'comment' ? 'text-white border-b-2 border-blue-500' : 'text-gray-400'}`}>
-								全部动态
+					{/* 核心升级：前置【最新回复】+【最新发布】，并独立单列【🔥 站长推荐】！ */}
+					<div className="flex items-center justify-between border-b border-[#30363d] pb-2 flex-wrap gap-2">
+						<div className="flex items-center gap-4 text-xs font-semibold flex-wrap">
+							<button
+								onClick={() => setActiveTab('latest_reply')}
+								className={`pb-1 flex items-center gap-1 transition-colors ${
+									activeTab === 'latest_reply' ? 'text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-gray-200'
+								}`}
+							>
+								<MessageSquare className="w-3.5 h-3.5 text-blue-400" /> 最新回复
 							</button>
-							<button onClick={() => setActiveTab('featured')} className={`pb-1 flex items-center gap-1 ${activeTab === 'featured' ? 'text-purple-400 border-b-2 border-purple-500' : 'text-gray-400'}`}>
-								💎 精华神帖区
+
+							<button
+								onClick={() => setActiveTab('latest_post')}
+								className={`pb-1 flex items-center gap-1 transition-colors ${
+									activeTab === 'latest_post' ? 'text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-gray-200'
+								}`}
+							>
+								<Zap className="w-3.5 h-3.5 text-yellow-400" /> 最新发布
+							</button>
+
+							{/* 独立专区：站长推荐 */}
+							<button
+								onClick={() => setActiveTab('recommend')}
+								className={`pb-1 flex items-center gap-1 transition-colors ${
+									activeTab === 'recommend' ? 'text-rose-400 border-b-2 border-rose-500' : 'text-gray-400 hover:text-rose-300'
+								}`}
+							>
+								<Flame className="w-3.5 h-3.5 text-rose-500" /> 站长推荐
+							</button>
+
+							<button
+								onClick={() => setActiveTab('featured')}
+								className={`pb-1 flex items-center gap-1 transition-colors ${
+									activeTab === 'featured' ? 'text-purple-400 border-b-2 border-purple-500' : 'text-gray-400 hover:text-purple-300'
+								}`}
+							>
+								💎 精华神帖
+							</button>
+
+							<button
+								onClick={() => setActiveTab('original')}
+								className={`pb-1 flex items-center gap-1 transition-colors ${
+									activeTab === 'original' ? 'text-emerald-400 border-b-2 border-emerald-500' : 'text-gray-400 hover:text-emerald-300'
+								}`}
+							>
+								✨ 原创专区
 							</button>
 						</div>
+
 						{user && (
-							<button onClick={() => setShowEditor(!showEditor)} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded flex items-center gap-1 font-medium">
+							<button onClick={() => setShowEditor(!showEditor)} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded flex items-center gap-1 font-medium shadow-sm">
 								<Plus className="w-3.5 h-3.5" /> 发帖
 							</button>
 						)}
@@ -645,7 +691,7 @@ export function IndexPage() {
 							) : filteredPosts.length === 0 ? (
 								<div className="p-12 text-center text-gray-400 space-y-2">
 									<Coffee className="w-8 h-8 mx-auto text-gray-500 stroke-1" />
-									<p className="text-sm">该分类下暂无主题，快来发布第一帖吧！</p>
+									<p className="text-sm">该专区暂无主题，快来发布第一帖吧！</p>
 								</div>
 							) : (
 								filteredPosts.map(post => {
@@ -710,10 +756,8 @@ export function IndexPage() {
 														{getCategoryName(post.category_id, post.category_name)}
 													</span>
 
-													{/* 核心升级：授勋与打赏积分彻底拆成两个独立按钮！ */}
 													{user.role === 'admin' && (
 														<span className="ml-auto flex items-center gap-2.5">
-															{/* 纯贴标签：绝不乱加积分 */}
 															<button
 																type="button"
 																onClick={() => handleSetBadgeOnly(post.id, post.author_name || '会员')}
@@ -722,7 +766,6 @@ export function IndexPage() {
 																<Award className="w-3 h-3" /> 授勋
 															</button>
 
-															{/* 独立打赏：站长自主决定赏多少积分 */}
 															<button
 																type="button"
 																onClick={() => handleRewardPost(post.id, post.author_name || '会员')}
