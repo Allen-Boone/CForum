@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, UserX, Medal } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Medal } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -481,11 +481,11 @@ export function IndexPage() {
 
 	function renderBadge(badge?: string | null) {
 		if (!badge) return null;
-		if (badge === '精华') return <span className="bg-purple-600 text-white text-[11px] font-bold px-1.5 py-0.2 rounded">💎 精华</span>;
-		if (badge === '推荐') return <span className="bg-rose-600 text-white text-[11px] font-bold px-1.5 py-0.2 rounded">🔥 推荐</span>;
-		if (badge === '神帖') return <span className="bg-amber-500 text-black text-[11px] font-extrabold px-1.5 py-0.2 rounded">🏆 神帖</span>;
-		if (badge === '原创') return <span className="bg-emerald-600 text-white text-[11px] font-bold px-1.5 py-0.2 rounded">✨ 原创</span>;
-		return <span className="bg-blue-600 text-white text-[11px] font-bold px-1.5 py-0.2 rounded">{badge}</span>;
+		if (badge === '精华') return <span className="bg-purple-600 text-white text-xs font-bold px-2 py-0.5 rounded shadow-sm">💎 精华</span>;
+		if (badge === '推荐') return <span className="bg-rose-600 text-white text-xs font-bold px-2 py-0.5 rounded shadow-sm">🔥 推荐</span>;
+		if (badge === '神帖') return <span className="bg-amber-500 text-black text-xs font-extrabold px-2 py-0.5 rounded shadow-sm">🏆 神帖</span>;
+		if (badge === '原创') return <span className="bg-emerald-600 text-white text-xs font-bold px-2 py-0.5 rounded shadow-sm">✨ 原创</span>;
+		return <span className="bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded">{badge}</span>;
 	}
 
 	function parseBadges(badgesStr?: string): string[] {
@@ -613,7 +613,7 @@ export function IndexPage() {
 							</div>
 						</div>
 					) : (
-						<div className="bg-[#161b22] border border-[#30363d] rounded-lg divide-y divide-[#21262d] overflow-hidden">
+						<div className="bg-[#161b22] border border-[#30363d] rounded-lg divide-y divide-[#21262d] overflow-hidden shadow-sm">
 							{loading ? (
 								<div className="p-8 text-center text-gray-500 text-sm">正在加载自由论坛内容...</div>
 							) : filteredPosts.length === 0 ? (
@@ -625,63 +625,87 @@ export function IndexPage() {
 								filteredPosts.map(post => {
 									const postAuthorBadges = parseBadges(post.author_badges);
 									return (
-										<div key={post.id} className="p-3.5 hover:bg-[#1c2128] transition-colors flex items-start gap-3 group">
-											<div className="w-10 h-10 rounded-md bg-[#21262d] flex-shrink-0 flex items-center justify-center font-bold text-gray-300 border border-[#30363d]">
+										/* 核心改造：完全对标图2！增大字号、拉开行距、大气排版 */
+										<div key={post.id} className="p-4 hover:bg-[#1c2128] transition-colors flex items-start gap-3.5 group">
+											{/* 边栏头像：44px 方圆角，与图2一致 */}
+											<div className="w-11 h-11 rounded-lg bg-[#21262d] flex-shrink-0 flex items-center justify-center font-bold text-gray-300 border border-[#30363d] overflow-hidden shadow-sm">
 												{post.author_avatar ? (
-													<img src={post.author_avatar} alt="" className="w-full h-full object-cover rounded-md" />
+													<img src={post.author_avatar} alt="" className="w-full h-full object-cover" />
 												) : (
-													<span className="text-xs text-blue-400">{(post.author_name || 'U').slice(0, 2).toUpperCase()}</span>
+													<span className="text-xs text-blue-400 font-extrabold tracking-wider">
+														{(post.author_name || 'U').slice(0, 2).toUpperCase()}
+													</span>
 												)}
 											</div>
+
+											{/* 标题与详情区：字号由 15px 升级至 16.5px (text-[16.5px])，字重强化 */}
 											<div className="flex-1 min-w-0">
-												<div className="flex items-center gap-1.5 flex-wrap">
-													{post.is_pinned === 1 && <span className="bg-[#b35900] text-white text-[11px] font-bold px-1.5 py-0.2 rounded">置顶</span>}
+												<div className="flex items-center gap-2 flex-wrap leading-normal">
+													{post.is_pinned === 1 && (
+														<span className="bg-[#b35900] text-white text-xs font-bold px-2 py-0.5 rounded shadow-sm">
+															置顶
+														</span>
+													)}
 													{renderBadge(post.badge)}
-													<a href={`/post?id=${post.id}`} className={`text-[15px] font-medium group-hover:text-blue-400 ${post.is_pinned === 1 ? 'text-[#ff7b72] font-semibold' : 'text-gray-100'}`}>
+
+													<a
+														href={`/post?id=${post.id}`}
+														className={`text-[16.5px] font-semibold leading-relaxed tracking-normal group-hover:text-blue-400 transition-colors ${
+															post.is_pinned === 1
+																? 'text-[#ff7b72]'
+																: post.badge
+																? 'text-amber-200'
+																: 'text-[#f0f6fc]'
+														}`}
+													>
 														{post.title}
 													</a>
+
 													{(post.reward_points ?? 0) > 0 && (
-														<span className="bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+														<span className="bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[11px] px-2 py-0.5 rounded-full font-bold">
 															🎁 已赏 +{post.reward_points}分
 														</span>
 													)}
 												</div>
-												<div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400 flex-wrap">
-													{/* 佩戴称号 */}
-													<span className="text-[11px] font-medium px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+
+												{/* 作者与时间详情行：字体清晰适中 */}
+												<div className="flex items-center gap-2.5 mt-2 text-[12px] text-gray-400 flex-wrap">
+													<span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
 														{post.author_role === 'admin' ? '👑 站长' : (post.author_title || '🌱 初来乍到')}
 													</span>
 
-													{/* 核心亮点：作者名字旁佩戴的专属荣誉勋章！ */}
 													{postAuthorBadges.map((b, bi) => (
-														<span key={bi} className="bg-amber-500/15 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded text-[10px] font-bold flex items-center gap-0.5">
+														<span key={bi} className="bg-amber-500/15 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded text-[10px] font-bold flex items-center gap-0.5">
 															{b}
 														</span>
 													))}
 
-													<span className="font-medium text-gray-300">{post.author_name || '会员'}</span>
+													<span className="font-semibold text-gray-300">{post.author_name || '会员'}</span>
 													<span>•</span>
 													<span>{formatDate(post.created_at)}</span>
 													<span>•</span>
-													<span className="bg-[#21262d] text-gray-300 px-1.5 py-0.5 rounded text-[11px] border border-[#30363d]">
+													<span className="bg-[#21262d] text-gray-300 px-2 py-0.5 rounded text-[11px] border border-[#30363d] font-medium">
 														{getCategoryName(post.category_id, post.category_name)}
 													</span>
+
 													{user.role === 'admin' && (
 														<span className="ml-auto flex items-center gap-2.5">
-															<button type="button" onClick={() => handleSetBadgeAndReward(post.id, post.author_name || '会员')} className="text-[11px] text-purple-400 hover:underline flex items-center gap-0.5">
+															<button type="button" onClick={() => handleSetBadgeAndReward(post.id, post.author_name || '会员')} className="text-[11px] text-purple-400 hover:underline flex items-center gap-0.5 font-medium">
 																<Award className="w-3 h-3" /> 加精/发奖
 															</button>
-															<button type="button" onClick={() => handleTogglePin(post.id)} className="text-[11px] text-amber-400 hover:underline flex items-center gap-0.5">
+															<button type="button" onClick={() => handleTogglePin(post.id)} className="text-[11px] text-amber-400 hover:underline flex items-center gap-0.5 font-medium">
 																<Pin className="w-3 h-3" /> {post.is_pinned === 1 ? '取消置顶' : '置顶'}
 															</button>
-															<button type="button" onClick={() => handleDeletePost(post.id, post.title)} className="text-[11px] text-red-400 hover:underline flex items-center gap-0.5">
+															<button type="button" onClick={() => handleDeletePost(post.id, post.title)} className="text-[11px] text-red-400 hover:underline flex items-center gap-0.5 font-medium">
 																<Trash2 className="w-3 h-3" /> 删除
 															</button>
 														</span>
 													)}
 												</div>
 											</div>
-											<div className="flex items-center gap-1 text-gray-400 bg-[#21262d] px-2 py-1 rounded-full text-xs font-semibold">
+
+											{/* 回复气泡：更加精致明显 */}
+											<div className="flex items-center gap-1 text-gray-400 group-hover:text-blue-400 bg-[#21262d] px-2.5 py-1 rounded-full text-xs font-bold border border-[#30363d]/60">
 												<MessageSquare className="w-3.5 h-3.5" /> <span>{post.comment_count || 0}</span>
 											</div>
 										</div>
@@ -720,7 +744,6 @@ export function IndexPage() {
 					</div>
 				</div>
 
-				{/* 右侧边栏 */}
 				<div className="lg:col-span-3 space-y-4">
 					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 text-sm">
 						{user ? (
@@ -765,7 +788,6 @@ export function IndexPage() {
 									</div>
 								</div>
 
-								{/* 个人专属勋章荣誉墙展示 */}
 								{userBadges.length > 0 && (
 									<div className="bg-[#0d1117] p-2 rounded-md border border-[#21262d] flex flex-wrap gap-1.5">
 										{userBadges.map((b, bi) => (
