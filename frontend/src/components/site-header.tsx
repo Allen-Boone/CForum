@@ -52,7 +52,7 @@ export function SiteHeader({
 
 					{user ? (
 						<div className="flex items-center gap-3">
-							{/* 智能切换：在后台显示“返回首页”，在前台显示“管理后台” */}
+							{/* 智能切换：在后台显示“返回前台首页”，在前台显示“管理后台” */}
 							{user.role === 'admin' && (
 								isInAdmin ? (
 									<Button asChild variant="outline" size="sm" className="border-emerald-600 text-emerald-400 hover:bg-emerald-600/20 h-7 text-xs">
@@ -96,7 +96,7 @@ export function SiteHeader({
 								<a href="/login"><LogIn className="h-4 w-4 mr-1" /> 登录</a>
 							</Button>
 							<Button asChild size="sm" className="bg-blue-600 hover:bg-blue-700 text-white font-medium">
-								<UserPlus className="h-4 w-4 mr-1" /> 注册</a>
+								<a href="/register"><UserPlus className="h-4 w-4 mr-1" /> 注册</a>
 							</Button>
 						</div>
 					)}
