@@ -84,6 +84,7 @@ export default {
 			await env.cforum_db.prepare('ALTER TABLE posts ADD COLUMN badge TEXT').run().catch(() => {});
 			await env.cforum_db.prepare('ALTER TABLE posts ADD COLUMN reward_points INTEGER DEFAULT 0').run().catch(() => {});
 			await env.cforum_db.prepare("ALTER TABLE users ADD COLUMN badges TEXT DEFAULT '[]'").run().catch(() => {});
+			await env.cforum_db.prepare("CREATE TABLE IF NOT EXISTS blackhouse (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, username TEXT, reason TEXT, duration TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)").run().catch(() => {});
 		};
 
 		const hasRestrictedKeywords = (username: string): boolean => {
@@ -112,15 +113,26 @@ export default {
 			}
 		}
 
+		// GET /api/blackhouse (公开小黑屋公示列表)
+		if (url.pathname === '/api/blackhouse' && method === 'GET') {
+			try {
+				await ensureColumns();
+				const list = await env.cforum_db.prepare("SELECT id, user_id, username, reason, duration, created_at FROM blackhouse ORDER BY id DESC LIMIT 50").all();
+				return jsonResponse(list.results || []);
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
 		// GET /api/community-stats
 		if (url.pathname === '/api/community-stats' && method === 'GET') {
 			try {
 				await ensureColumns();
 				const [userCount, postCount, commentCount, latestUsers] = await Promise.all([
-					env.cforum_db.prepare("SELECT COUNT(*) as count FROM users WHERE username != '已注销用户'").first<number>('count'),
+					env.cforum_db.prepare("SELECT COUNT(*) as count FROM users WHERE username != '已注销用户' AND role != 'banned'").first<number>('count'),
 					env.cforum_db.prepare('SELECT COUNT(*) as count FROM posts').first<number>('count'),
 					env.cforum_db.prepare('SELECT COUNT(*) as count FROM comments').first<number>('count'),
-					env.cforum_db.prepare("SELECT id, username, avatar_url, role, title, badges FROM users WHERE username != '已注销用户' ORDER BY id DESC LIMIT 16").all()
+					env.cforum_db.prepare("SELECT id, username, avatar_url, role, title, badges FROM users WHERE username != '已注销用户' AND role != 'banned' ORDER BY id DESC LIMIT 16").all()
 				]);
 
 				return jsonResponse({
@@ -284,7 +296,9 @@ export default {
 				).bind(account, account).first<DBUser>();
 
 				if (!user || user.username === '已注销用户') return jsonResponse({ error: '账号不存在或已注销' }, 401);
-				if (user.role === 'banned') return jsonResponse({ error: '该账号因违规已被社区永久封禁！' }, 403);
+				if (user.role === 'banned') {
+					return jsonResponse({ error: '⚖️ 您的账号已被站长关入小黑屋反省，禁止登录与访问！' }, 403);
+				}
 
 				const passwordHash = await hashPassword(password);
 				if (user.password !== passwordHash) return jsonResponse({ error: '密码不正确，请重新输入' }, 401);
@@ -324,8 +338,9 @@ export default {
 		if (url.pathname === '/api/checkin' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
-				const today = new Date().toISOString().slice(0, 10);
+				if (userPayload.role === 'banned') return jsonResponse({ error: '您已被关入小黑屋，禁止签到！' }, 403);
 
+				const today = new Date().toISOString().slice(0, 10);
 				const user = await env.cforum_db.prepare('SELECT points, last_checkin_date FROM users WHERE id = ?').bind(userPayload.id).first<DBUser>();
 				if (user?.last_checkin_date === today) {
 					return jsonResponse({ error: '今日已经签过到了，明天再来领积分吧！', points: user?.points ?? 0 }, 400);
@@ -393,7 +408,7 @@ export default {
 		if (url.pathname === '/api/posts' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
-				if (userPayload.role === 'banned') return jsonResponse({ error: '您的账号已被禁言封禁，无法发帖！' }, 403);
+				if (userPayload.role === 'banned') return jsonResponse({ error: '⚖️ 您的账号已被关入小黑屋，禁止发帖！' }, 403);
 
 				const body = await request.json() as any;
 				const { title, content, category_id } = body;
@@ -544,7 +559,7 @@ export default {
 		if (url.pathname.match(/^\/api\/posts\/\d+\/comments$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
-				if (userPayload.role === 'banned') return jsonResponse({ error: '您的账号已被禁言封禁，无法发表评论！' }, 403);
+				if (userPayload.role === 'banned') return jsonResponse({ error: '⚖️ 您的账号已被关入小黑屋，禁止发表评论！' }, 403);
 
 				const postId = url.pathname.split('/')[3];
 				const body = await request.json() as any;
@@ -703,7 +718,7 @@ export default {
 				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
 
 				const [userCount, postCount, commentCount] = await Promise.all([
-					env.cforum_db.prepare("SELECT COUNT(*) as count FROM users WHERE username != '已注销用户'").first<number>('count'),
+					env.cforum_db.prepare("SELECT COUNT(*) as count FROM users WHERE username != '已注销用户' AND role != 'banned'").first<number>('count'),
 					env.cforum_db.prepare('SELECT COUNT(*) as count FROM posts').first<number>('count'),
 					env.cforum_db.prepare('SELECT COUNT(*) as count FROM comments').first<number>('count')
 				]);
@@ -729,7 +744,37 @@ export default {
 			}
 		}
 
-		// 核心新增：站长为指定用户设置角色等级身份！
+		// 站长神权：一键打入小黑屋并公开示众！
+		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/banish$/) && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
+
+				await ensureColumns();
+				const targetUserId = Number(url.pathname.split('/')[4]);
+				if (targetUserId === 1) return jsonResponse({ error: '总站长主账号受系统保护，不可关押！' }, 400);
+
+				const body = await request.json() as any;
+				const reason = String(body.reason || '严重违反社区规则').trim();
+				const duration = String(body.duration || '永久封禁').trim();
+
+				const user = await env.cforum_db.prepare('SELECT username FROM users WHERE id = ?').bind(targetUserId).first<{ username: string }>();
+				if (!user) return jsonResponse({ error: '用户不存在' }, 404);
+
+				// 1. 设置角色为 banned 封禁
+				await env.cforum_db.prepare("UPDATE users SET role = 'banned' WHERE id = ?").bind(targetUserId).run();
+				// 2. 清除该用户会话让他立刻掉线
+				await env.cforum_db.prepare("DELETE FROM sessions WHERE user_id = ?").bind(targetUserId).run().catch(() => {});
+				// 3. 记入小黑屋公开公示牌
+				await env.cforum_db.prepare("INSERT INTO blackhouse (user_id, username, reason, duration) VALUES (?, ?, ?, ?)").bind(targetUserId, user.username, reason, duration).run();
+
+				return jsonResponse({ success: true, username: user.username });
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// 站长设置角色等级
 		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/role$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -804,7 +849,7 @@ export default {
 
 				if (!badge) return jsonResponse({ error: '请选择或输入要授予的勋章' }, 400);
 
-				let query = "SELECT id, badges FROM users WHERE username != '已注销用户'";
+				let query = "SELECT id, badges FROM users WHERE username != '已注销用户' AND role != 'banned'";
 				if (targetScope === 'top100') {
 					query += " ORDER BY id ASC LIMIT 100";
 				}
