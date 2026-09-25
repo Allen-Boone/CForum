@@ -89,7 +89,7 @@ export default {
 		// GET /api/config
 		if (url.pathname === '/api/config' && method === 'GET') {
 			try {
-				const userCount = await env.cforum_db.prepare('SELECT COUNT(*) as count FROM users').first('count');
+				const userCount = await env.cforum_db.prepare("SELECT COUNT(*) as count FROM users WHERE username != '已注销用户'").first('count');
 				return jsonResponse({
 					turnstile_enabled: false,
 					turnstile_site_key: '',
@@ -101,15 +101,16 @@ export default {
 			}
 		}
 
-		// GET /api/community-stats
+		// GET /api/community-stats (严格过滤：已注销用户绝不登上最新用户与在线头像墙！)
 		if (url.pathname === '/api/community-stats' && method === 'GET') {
 			try {
 				await ensureColumns();
 				const [userCount, postCount, commentCount, latestUsers] = await Promise.all([
-					env.cforum_db.prepare('SELECT COUNT(*) as count FROM users').first<number>('count'),
+					env.cforum_db.prepare("SELECT COUNT(*) as count FROM users WHERE username != '已注销用户'").first<number>('count'),
 					env.cforum_db.prepare('SELECT COUNT(*) as count FROM posts').first<number>('count'),
 					env.cforum_db.prepare('SELECT COUNT(*) as count FROM comments').first<number>('count'),
-					env.cforum_db.prepare('SELECT id, username, avatar_url, role, title, badges FROM users ORDER BY id DESC LIMIT 16').all()
+					// 只选活生生的正常会员，自动把已注销用户排除在外！
+					env.cforum_db.prepare("SELECT id, username, avatar_url, role, title, badges FROM users WHERE username != '已注销用户' ORDER BY id DESC LIMIT 16").all()
 				]);
 
 				return jsonResponse({
@@ -170,7 +171,7 @@ export default {
 			}
 		}
 
-		// DELETE /api/user/self (注销只抹除个人隐私，帖子永远保留！)
+		// DELETE /api/user/self (注销只抹除个人隐私与登录态，帖子保留)
 		if (url.pathname === '/api/user/self' && method === 'DELETE') {
 			try {
 				const userPayload = await authenticate(request);
@@ -183,7 +184,6 @@ export default {
 				await env.cforum_db.prepare('DELETE FROM checkins WHERE user_id = ?').bind(uid).run().catch(() => {});
 				await env.cforum_db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(uid).run().catch(() => {});
 				
-				// 将用户昵称改为已注销，保留其发表的精华帖供后人查阅！
 				await env.cforum_db.prepare("UPDATE users SET username = '已注销用户', email = ? WHERE id = ?")
 					.bind(`deleted_${uid}_${Date.now()}@free.com`, uid).run();
 
@@ -265,7 +265,7 @@ export default {
 					'SELECT id, username, email, password, verified, role, avatar_url, points, title, badges, last_checkin_date FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)'
 				).bind(account, account).first<DBUser>();
 
-				if (!user) return jsonResponse({ error: '账号不存在，请先注册' }, 401);
+				if (!user || user.username === '已注销用户') return jsonResponse({ error: '账号不存在或已注销' }, 401);
 
 				const passwordHash = await hashPassword(password);
 				if (user.password !== passwordHash) return jsonResponse({ error: '密码不正确，请重新输入' }, 401);
@@ -670,7 +670,7 @@ export default {
 				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
 
 				const [userCount, postCount, commentCount] = await Promise.all([
-					env.cforum_db.prepare('SELECT COUNT(*) as count FROM users').first<number>('count'),
+					env.cforum_db.prepare("SELECT COUNT(*) as count FROM users WHERE username != '已注销用户'").first<number>('count'),
 					env.cforum_db.prepare('SELECT COUNT(*) as count FROM posts').first<number>('count'),
 					env.cforum_db.prepare('SELECT COUNT(*) as count FROM comments').first<number>('count')
 				]);
