@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiFetch, getSecurityHeaders, type Category } from '@/lib/api';
 import { getToken, getUser } from '@/lib/auth';
-import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles } from 'lucide-react';
+import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil } from 'lucide-react';
 
 const PRESET_BADGES = [
 	{ name: '🛡️ 白帽守护者', desc: '发现重大漏洞、守护社区安全', color: 'border-blue-500 bg-blue-500/10 text-blue-300' },
@@ -27,13 +27,11 @@ export function AdminPage() {
 		Array<{ id: number; email: string; username: string; role: string; verified: number; created_at: string; points?: number; title?: string; badges?: string }>
 	>([]);
 
-	// 单人授勋弹窗
 	const [badgeModalOpen, setBadgeModalOpen] = React.useState(false);
 	const [targetUser, setTargetUser] = React.useState<{ id: number; username: string } | null>(null);
 	const [selectedBadges, setSelectedBadges] = React.useState<string[]>([]);
 	const [customBadgeInput, setCustomBadgeInput] = React.useState('');
 
-	// 全员一键大授勋弹窗
 	const [batchModalOpen, setBatchModalOpen] = React.useState(false);
 	const [batchBadge, setBatchBadge] = React.useState('🥮 中秋月圆');
 	const [batchScope, setBatchScope] = React.useState<'all' | 'top100'>('all');
@@ -67,6 +65,31 @@ export function AdminPage() {
 	React.useEffect(() => {
 		refresh();
 	}, [refresh]);
+
+	// 核心亮点：站长强制修改违规用户的昵称！
+	async function handleRenameUser(userId: number, currentName: string) {
+		const input = prompt(
+			`【站长强制修改用户名】\n当前用户名：${currentName}\n\n请输入新的合规用户名（例如：热心坛友${userId}）：`,
+			`坛友_${userId}`
+		);
+		if (!input) return;
+		const newName = input.trim();
+		if (!newName || newName === currentName) return;
+
+		try {
+			const res = await apiFetch<{ success: boolean; username: string }>(`/admin/users/${userId}/rename`, {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify({ username: newName })
+			});
+			if (res.success) {
+				alert(`🎉 修改成功！原用户【${currentName}】已被更名为：【${res.username}】`);
+				refresh();
+			}
+		} catch (err: any) {
+			alert('改名失败: ' + err.message);
+		}
+	}
 
 	async function handleAdjustPoints(userId: number, username: string, currentPoints: number) {
 		const input = prompt(
@@ -139,7 +162,6 @@ export function AdminPage() {
 		}
 	}
 
-	// 站长神权：一键全员批量大授勋！
 	async function handleExecuteBatchBadge() {
 		if (!confirm(`确定要为【${batchScope === 'all' ? '全站所有注册会员' : '前 100 位创站元老'}】一键批量佩戴【${batchBadge}】勋章吗？`)) return;
 		setBatchLoading(true);
@@ -182,11 +204,10 @@ export function AdminPage() {
 							<Shield className="w-5 h-5 text-blue-500" />
 							自由论坛 · 管理控制台
 						</h1>
-						<p className="text-xs text-gray-400 mt-1">站点统计、全站用户、全员大授勋与快捷充值中心</p>
+						<p className="text-xs text-gray-400 mt-1">站点统计、全站用户、改名封控、全员大授勋与快捷充值中心</p>
 					</div>
 
 					<div className="flex items-center gap-2">
-						{/* 核心亮点：全员一键大授勋快捷入口 */}
 						<Button
 							size="sm"
 							onClick={() => setBatchModalOpen(true)}
@@ -236,7 +257,7 @@ export function AdminPage() {
 					<CardHeader className="py-3 px-4 border-b border-[#30363d]">
 						<CardTitle className="text-sm text-white flex items-center gap-1.5">
 							<Users className="w-4 h-4 text-blue-400" />
-							会员管理、荣誉勋章与积分充值
+							会员管理、荣誉勋章、强制改名与积分充值
 						</CardTitle>
 					</CardHeader>
 					<CardContent className="p-0 overflow-x-auto">
@@ -285,7 +306,19 @@ export function AdminPage() {
 												</span>
 											</td>
 											<td className="py-3 px-4 text-right">
-												<div className="flex items-center justify-end gap-1.5">
+												<div className="flex items-center justify-end gap-1.5 flex-wrap">
+													{/* 核心亮点：站长强制给违规用户改名！ */}
+													{u.role !== 'admin' && (
+														<Button
+															size="sm"
+															variant="outline"
+															onClick={() => handleRenameUser(u.id, u.username)}
+															className="border-sky-500/40 text-sky-300 hover:bg-sky-500/20 text-xs h-6 px-2"
+														>
+															<Pencil className="w-3 h-3 mr-1" />
+															改名
+														</Button>
+													)}
 													<Button
 														size="sm"
 														variant="outline"
@@ -314,7 +347,7 @@ export function AdminPage() {
 				</Card>
 			</div>
 
-			{/* 弹窗 1：单人精细化授勋弹窗 */}
+			{/* 单人授勋弹窗 */}
 			{badgeModalOpen && targetUser && (
 				<div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
 					<div className="bg-[#161b22] border border-[#30363d] rounded-xl max-w-lg w-full p-5 space-y-4 shadow-2xl text-white">
@@ -400,7 +433,7 @@ export function AdminPage() {
 				</div>
 			)}
 
-			{/* 弹窗 2：站长专属 · 全员一键大授勋弹窗（解决手点抽筋的神器！） */}
+			{/* 全员一键大授勋弹窗 */}
 			{batchModalOpen && (
 				<div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
 					<div className="bg-[#161b22] border border-amber-500/40 rounded-xl max-w-md w-full p-5 space-y-4 shadow-2xl text-white">
