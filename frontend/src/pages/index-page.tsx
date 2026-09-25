@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Gift, Flame, Zap } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Gift, Flame, Zap, FolderInput } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -166,7 +166,6 @@ export function IndexPage() {
 	const [showEditor, setShowEditor] = React.useState<boolean>(false);
 	const [newTitle, setNewTitle] = React.useState('');
 	const [newContent, setNewContent] = React.useState('');
-	// 默认发帖分类：站长默认公告(9)，普通用户默认茶水间(1)
 	const [newCategoryId, setNewCategoryId] = React.useState<string>(() => user?.role === 'admin' ? '9' : '1');
 	const [pinOnCreate, setPinOnCreate] = React.useState<boolean>(false);
 
@@ -495,6 +494,34 @@ export function IndexPage() {
 		}
 	}
 
+	// 核心亮点：站长专属一键移动帖子板块！
+	async function handleMoveCategory(postId: number, currentTitle: string) {
+		const menu = ALL_CATEGORIES.map(c => `${c.id} = ${c.name}`).join('\n');
+		const input = prompt(
+			`【站长移动帖子板块】\n当前帖子：《${currentTitle}》\n\n请选择要移入的新板块编号：\n${menu}`,
+			'1'
+		);
+		if (!input) return;
+		const targetCatId = parseInt(input.trim());
+		if (isNaN(targetCatId) || targetCatId < 1 || targetCatId > 9) {
+			alert('请输入 1 ~ 9 之间的有效板块编号！');
+			return;
+		}
+
+		try {
+			await apiFetch(`/admin/posts/${postId}/move`, {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify({ category_id: targetCatId })
+			});
+			const targetName = ALL_CATEGORIES.find(c => c.id === targetCatId)?.name;
+			alert(`🎉 移动成功！帖子已成功移入【${targetName}】板块！`);
+			loadPosts();
+		} catch (err: any) {
+			alert('移动失败: ' + err.message);
+		}
+	}
+
 	async function handleDeletePost(postId: number, title: string) {
 		if (!confirm(`确定要删除《${title}》吗？`)) return;
 		try {
@@ -524,7 +551,6 @@ export function IndexPage() {
 		}
 	}
 
-	// 核心权限隔离：普通会员发帖下拉框完全过滤掉【公告(9)】，只有站长能选公告！
 	const isAdmin = user?.role === 'admin';
 	const selectableCategories = isAdmin
 		? ALL_CATEGORIES
@@ -628,7 +654,6 @@ export function IndexPage() {
 					{showEditor && user && (
 						<form onSubmit={handleCreatePost} className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 space-y-3">
 							<div className="flex gap-2">
-								{/* 严格权限：普通会员只能选 8 个公开板块，只有站长能选【公告】 */}
 								<select
 									value={newCategoryId}
 									onChange={e => setNewCategoryId(e.target.value)}
@@ -769,7 +794,16 @@ export function IndexPage() {
 													</span>
 
 													{isAdmin && (
-														<span className="ml-auto flex items-center gap-2.5">
+														<span className="ml-auto flex items-center gap-2.5 flex-wrap">
+															{/* 站长专属快捷移板块按钮 */}
+															<button
+																type="button"
+																onClick={() => handleMoveCategory(post.id, post.title)}
+																className="text-[11px] text-teal-400 hover:underline flex items-center gap-0.5 font-medium"
+															>
+																<FolderInput className="w-3 h-3" /> 移板块
+															</button>
+
 															<button
 																type="button"
 																onClick={() => handleSetBadgeOnly(post.id, post.author_name || '会员')}
