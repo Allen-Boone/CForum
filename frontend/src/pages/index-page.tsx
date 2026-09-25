@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Gift, Flame, Zap, FolderInput, Gavel, X, ShieldCheck, CheckCircle2, Minus } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Gift, Flame, Zap, FolderInput, Gavel, X, CheckCircle2, ArrowUp } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -190,6 +190,9 @@ export function IndexPage() {
 	const avatarInputRef = React.useRef<HTMLInputElement>(null);
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
+	// 一键平滑置顶滚动监听
+	const [showBackToTop, setShowBackToTop] = React.useState(false);
+
 	// 小黑屋与信任等级看板状态
 	const [blackhouseOpen, setBlackhouseOpen] = React.useState(false);
 	const [blackhouseList, setBlackhouseList] = React.useState<Array<{ id: number; username: string; reason: string; duration: string; created_at: string }>>([]);
@@ -210,6 +213,26 @@ export function IndexPage() {
 			if (st) setCommStats(st);
 		} catch (_) {}
 	}, []);
+
+	// 监听滚动距离，超过 200px 优雅显示回到顶部按钮
+	React.useEffect(() => {
+		function handleScroll() {
+			if (window.scrollY > 200) {
+				setShowBackToTop(true);
+			} else {
+				setShowBackToTop(false);
+			}
+		}
+		window.addEventListener('scroll', handleScroll, { passive: true });
+		return () => window.removeEventListener('scroll', handleScroll);
+	}, []);
+
+	function scrollToTop() {
+		window.scrollTo({
+			top: 0,
+			behavior: 'smooth'
+		});
+	}
 
 	React.useEffect(() => {
 		loadStats();
@@ -611,7 +634,6 @@ export function IndexPage() {
 	const displayOnlineUsers = allRealUsers.slice(0, Math.min(8, allRealUsers.length));
 	const onlineCount = Math.min(commStats.users || 1, Math.max(1, Math.floor((commStats.users || 1) * 0.4) + 1));
 
-	// 信任等级名称与图示
 	const TRUST_LEVEL_META = [
 		{ name: 'TL0 新访客', icon: '⭐', desc: '新注册未深度互动', color: 'text-gray-400' },
 		{ name: 'TL1 见习', icon: '🌙', desc: '浏览并参与互动', color: 'text-amber-400' },
@@ -962,7 +984,6 @@ export function IndexPage() {
 												{avatarUploading ? '上传中' : '换头像'}
 											</button>
 										</div>
-										{/* 点击直接打开信任段位看板！ */}
 										<button
 											onClick={() => setTrustModalOpen(true)}
 											title="点击查看信任等级成长与能力解锁看板"
@@ -1014,7 +1035,6 @@ export function IndexPage() {
 						<div className="grid grid-cols-2 gap-y-2 text-gray-400">
 							<span onClick={handleCheckin} className="hover:text-emerald-400 cursor-pointer text-emerald-500 font-medium">• 每日签到（领积分）</span>
 							<span onClick={() => avatarInputRef.current?.click()} className="hover:text-sky-400 cursor-pointer text-sky-400 font-medium">• 📷 更换个性头像</span>
-							{/* 核心亮点：段位与小黑屋快捷入口 */}
 							<span onClick={() => setTrustModalOpen(true)} className="hover:text-amber-300 cursor-pointer text-amber-400 font-semibold">• 🏆 我的等级(段位)</span>
 							<span onClick={handleOpenBlackhouse} className="hover:text-rose-400 cursor-pointer text-rose-400 font-bold flex items-center gap-1">• <Gavel className="w-3 h-3" /> 社区小黑屋</span>
 							<span onClick={handleSwitchTitle} className="hover:text-blue-400 cursor-pointer">• 我的称号仓库</span>
@@ -1051,6 +1071,18 @@ export function IndexPage() {
 					</div>
 				</div>
 			</div>
+
+			{/* 1:1 像素级复刻图 2 的「一键平滑飞回顶部（Back to Top）」悬浮圆形按钮 */}
+			{showBackToTop && (
+				<button
+					type="button"
+					onClick={scrollToTop}
+					title="返回顶部"
+					className="fixed bottom-8 right-8 z-50 w-11 h-11 rounded-full bg-[#161b22]/90 hover:bg-[#21262d] border border-gray-600/80 hover:border-gray-400 text-gray-300 hover:text-white flex items-center justify-center shadow-2xl backdrop-blur-md transition-all hover:scale-110 active:scale-95 group animate-in fade-in zoom-in duration-200"
+				>
+					<ArrowUp className="w-5 h-5 stroke-[2.2] group-hover:-translate-y-0.5 transition-transform text-gray-200 group-hover:text-white" />
+				</button>
+			)}
 
 			{/* 社区小黑屋公示大弹窗 */}
 			{blackhouseOpen && (
@@ -1102,7 +1134,7 @@ export function IndexPage() {
 				</div>
 			)}
 
-			{/* 核心亮点：1:1 像素级复刻的「信任等级 / 段位看板」 */}
+			{/* 信任等级 / 段位看板 */}
 			{trustModalOpen && (
 				<div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
 					<div className="bg-[#161b22] border border-[#30363d] rounded-xl max-w-3xl w-full p-6 space-y-6 shadow-2xl text-white my-8">
@@ -1122,7 +1154,6 @@ export function IndexPage() {
 							</button>
 						</div>
 
-						{/* 升级进度模块（绿色进度条） */}
 						<div className="bg-[#0d1117] border border-[#21262d] rounded-xl p-4 space-y-3.5">
 							<div className="flex items-center justify-between text-xs">
 								<span className="font-bold text-gray-200">
@@ -1181,7 +1212,6 @@ export function IndexPage() {
 							</div>
 						</div>
 
-						{/* 各等级条件一览卡片 */}
 						<div>
 							<h4 className="text-xs font-bold text-gray-300 mb-2.5">各等级成长条件一览</h4>
 							<div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
@@ -1223,7 +1253,6 @@ export function IndexPage() {
 							</div>
 						</div>
 
-						{/* 各等级能力解锁对比表格 */}
 						<div>
 							<h4 className="text-xs font-bold text-gray-300 mb-2">各等级能力解锁对比</h4>
 							<div className="border border-[#30363d] rounded-lg overflow-x-auto bg-[#0d1117]">
