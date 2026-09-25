@@ -4,9 +4,9 @@ import { Button } from '@/components/ui/button';
 import { apiFetch, formatDate, getSecurityHeaders, type Post, type Comment } from '@/lib/api';
 import { getToken, getUser } from '@/lib/auth';
 import { renderMarkdownToHtml, highlightCodeBlocks, attachFancybox } from '@/lib/markdown';
-import { Heart, MessageSquare, ArrowLeft, Pin, Trash2, Edit3, Smile, Paperclip, Bold, Italic, Heading, Quote, Code, FileCode, List, Link as LinkIcon, Image as ImageIcon } from 'lucide-react';
+import { Heart, MessageSquare, ArrowLeft, Pin, Trash2, Smile, Paperclip, Bold, Italic, Heading, Quote, Code, FileCode, List, Link as LinkIcon, Image as ImageIcon, Send } from 'lucide-react';
 
-const QUICK_EMOJIS = ['😂', '👍', '🔥', '🚀', '❤️', '🎉', '☕', '💎', '💡', '😎', '🫡', '🤝', '🍺', '🥳', '💯'];
+const QUICK_EMOJIS = ['😂', '👍', '🔥', '🚀', '❤️', '🎉', '☕', '💎', '💡', '😎', '🫡', '🤝', '🍺', '🥳', '💯', '✨', '👏', '👀', '🤯', '💪'];
 
 export function PostPage() {
 	const token = getToken();
@@ -194,31 +194,32 @@ export function PostPage() {
 
 	return (
 		<PageShell>
-			<div className="max-w-4xl mx-auto space-y-5">
+			<div className="max-w-4xl mx-auto space-y-6">
 				<div className="flex items-center justify-between">
 					<Button asChild variant="ghost" size="sm" className="text-gray-400 hover:text-white -ml-2 text-xs">
 						<a href="/"><ArrowLeft className="w-4 h-4 mr-1" /> 返回主题列表</a>
 					</Button>
-					<span className="text-xs text-gray-400 bg-[#161b22] px-2.5 py-1 rounded-full border border-[#30363d]">
+					<span className="text-xs text-gray-400 bg-[#161b22] px-3 py-1 rounded-full border border-[#30363d]">
 						{post.category_name || '茶水间'}
 					</span>
 				</div>
 
-				<div className="bg-[#161b22] border border-[#30363d] rounded-xl p-6 space-y-4 shadow-sm">
-					<h1 className="text-xl sm:text-2xl font-black text-white leading-snug tracking-tight">
+				{/* 帖子正文区 */}
+				<div className="bg-[#161b22] border border-[#30363d] rounded-xl p-6 sm:p-7 space-y-5 shadow-sm">
+					<h1 className="text-2xl sm:text-3xl font-black text-white leading-snug tracking-tight">
 						{post.title}
 					</h1>
 
 					<div className="flex items-center gap-3 border-b border-[#30363d] pb-4 text-xs text-gray-400 flex-wrap">
 						<div className="flex items-center gap-2">
-							<div className="w-7 h-7 rounded-full bg-[#21262d] flex items-center justify-center font-bold text-gray-300 border border-[#30363d] overflow-hidden">
+							<div className="w-8 h-8 rounded-full bg-[#21262d] flex items-center justify-center font-bold text-gray-300 border border-[#30363d] overflow-hidden">
 								{post.author_avatar ? (
 									<img src={post.author_avatar} alt="" className="w-full h-full object-cover" />
 								) : (
 									<span>{(post.author_name || 'U').slice(0, 1)}</span>
 								)}
 							</div>
-							<span className="font-bold text-gray-200">{post.author_name || '会员'}</span>
+							<span className="font-bold text-gray-200 text-sm">{post.author_name || '会员'}</span>
 						</div>
 						<span>•</span>
 						<span>{formatDate(post.created_at)}</span>
@@ -226,10 +227,9 @@ export function PostPage() {
 						<span>{post.view_count || 0} 次阅读</span>
 					</div>
 
-					{/* 帖子正文 Markdown 渲染 */}
 					<div
 						ref={contentRef}
-						className="prose prose-invert max-w-none text-gray-200 text-sm leading-relaxed"
+						className="prose prose-invert max-w-none text-gray-200 text-[15px] leading-relaxed"
 						dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(post.content) }}
 					/>
 
@@ -248,8 +248,8 @@ export function PostPage() {
 
 				{/* 评论区交流 */}
 				<div className="bg-[#161b22] border border-[#30363d] rounded-xl overflow-hidden shadow-sm">
-					<div className="p-4 border-b border-[#30363d] flex items-center justify-between">
-						<h3 className="font-bold text-sm text-white flex items-center gap-2">
+					<div className="p-4 sm:p-5 border-b border-[#30363d] flex items-center justify-between">
+						<h3 className="font-bold text-base text-white flex items-center gap-2">
 							<MessageSquare className="w-4 h-4 text-blue-400" />
 							交流讨论 ({comments.length})
 						</h3>
@@ -257,29 +257,29 @@ export function PostPage() {
 
 					<div className="divide-y divide-[#21262d]">
 						{comments.length === 0 ? (
-							<div className="p-8 text-center text-xs text-gray-500">
-								暂无回帖，快在下方发表第一条评论吧！
+							<div className="py-12 text-center text-xs text-gray-500">
+								🕊️ 暂无回帖，快在下方发表第一条真知灼见吧！
 							</div>
 						) : (
 							comments.map((cm, idx) => (
-								<div key={cm.id} className="p-4 space-y-2 hover:bg-[#1c2128]/50 transition-colors">
+								<div key={cm.id} className="p-4 sm:p-5 space-y-2.5 hover:bg-[#1c2128]/50 transition-colors">
 									<div className="flex items-center justify-between text-xs">
 										<div className="flex items-center gap-2">
-											<span className="font-bold text-gray-300">{cm.username}</span>
+											<span className="font-bold text-gray-200 text-sm">{cm.username}</span>
 											<span className="text-[11px] text-gray-500">#{idx + 1}楼</span>
 											<span className="text-[11px] text-gray-500">• {formatDate(cm.created_at)}</span>
 										</div>
 										{(user?.role === 'admin' || user?.id === cm.author_id) && (
 											<button
 												onClick={() => handleDeleteComment(cm.id)}
-												className="text-[11px] text-gray-500 hover:text-red-400"
+												className="text-[11px] text-gray-500 hover:text-red-400 transition-colors"
 											>
 												删除
 											</button>
 										)}
 									</div>
 									<div
-										className="text-xs text-gray-200 leading-relaxed pl-2 border-l border-gray-700/50"
+										className="text-[14px] text-gray-200 leading-relaxed pl-2.5 border-l-2 border-gray-700/60"
 										dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(cm.content) }}
 									/>
 								</div>
@@ -287,29 +287,30 @@ export function PostPage() {
 						)}
 					</div>
 
-					{/* 评论富文本输入框与编辑工具条 */}
+					{/* 核心重构：大气宽敞、极具呼吸感的富文本回复框架 */}
 					{user ? (
-						<form onSubmit={handleSubmitReply} className="p-4 bg-[#0d1117] border-t border-[#30363d] space-y-3">
-							<div className="border border-[#30363d] rounded-md overflow-hidden bg-[#161b22]">
-								{/* 评论编辑工具条 */}
-								<div className="flex items-center gap-1 p-1.5 bg-[#1c2128] border-b border-[#30363d] flex-wrap text-gray-300 text-xs select-none">
+						<form onSubmit={handleSubmitReply} className="p-5 sm:p-6 bg-[#0d1117] border-t border-[#30363d] space-y-3.5">
+							<div className="border border-[#30363d] rounded-xl overflow-hidden bg-[#161b22] focus-within:border-blue-500/80 transition-colors shadow-inner">
+								{/* 宽敞大气的顶层工具条 */}
+								<div className="flex items-center gap-1.5 px-3 py-2.5 bg-[#1c2128] border-b border-[#30363d] flex-wrap text-gray-300 text-xs select-none">
 									<div className="relative">
 										<button
 											type="button"
 											onClick={() => setShowEmojiPicker(!showEmojiPicker)}
 											title="插入表情"
-											className="p-1 rounded hover:bg-[#21262d] hover:text-yellow-400 transition-colors"
+											className="p-1.5 rounded-md hover:bg-[#282e38] hover:text-yellow-400 transition-all flex items-center gap-1"
 										>
-											<Smile className="w-4 h-4" />
+											<Smile className="w-4 h-4 text-yellow-500" />
+											<span className="text-[11px] text-gray-400 hidden sm:inline">表情</span>
 										</button>
 										{showEmojiPicker && (
-											<div className="absolute top-8 left-0 z-30 bg-[#161b22] border border-[#30363d] p-2 rounded-lg shadow-xl grid grid-cols-5 gap-1.5 w-44">
+											<div className="absolute top-10 left-0 z-30 bg-[#161b22] border border-[#30363d] p-3 rounded-xl shadow-2xl grid grid-cols-5 gap-2 w-52 animate-in fade-in zoom-in-95 duration-150">
 												{QUICK_EMOJIS.map((em, i) => (
 													<button
 														key={i}
 														type="button"
 														onClick={() => handleInsertEmoji(em)}
-														className="text-base p-1 hover:bg-[#21262d] rounded text-center transition-all"
+														className="text-lg p-1.5 hover:bg-[#21262d] rounded-lg text-center transition-all hover:scale-125"
 													>
 														{em}
 													</button>
@@ -318,94 +319,109 @@ export function PostPage() {
 										)}
 									</div>
 
-									<span className="w-[1px] h-3 bg-gray-700 mx-0.5" />
+									<span className="w-[1px] h-4 bg-gray-700/80 mx-1" />
 
 									<button
 										type="button"
-										onClick={() => insertMarkdownTag('**', '**', '加粗文本')}
-										title="粗体"
-										className="p-1 rounded hover:bg-[#21262d] hover:text-white"
+										onClick={() => insertMarkdownTag('**', '**', '加粗文字')}
+										title="粗体 (Ctrl+B)"
+										className="p-1.5 rounded-md hover:bg-[#282e38] hover:text-white transition-all font-bold"
 									>
-										<Bold className="w-3.5 h-3.5" />
+										<Bold className="w-4 h-4" />
 									</button>
 
 									<button
 										type="button"
-										onClick={() => insertMarkdownTag('*', '*', '斜体')}
-										title="斜体"
-										className="p-1 rounded hover:bg-[#21262d] hover:text-white"
+										onClick={() => insertMarkdownTag('*', '*', '斜体文字')}
+										title="斜体 (Ctrl+I)"
+										className="p-1.5 rounded-md hover:bg-[#282e38] hover:text-white transition-all italic"
 									>
-										<Italic className="w-3.5 h-3.5" />
+										<Italic className="w-4 h-4" />
 									</button>
 
 									<button
 										type="button"
 										onClick={() => insertMarkdownTag('### ', '', '小标题')}
-										title="标题"
-										className="p-1 rounded hover:bg-[#21262d] hover:text-white"
+										title="段落大标题"
+										className="p-1.5 rounded-md hover:bg-[#282e38] hover:text-white transition-all"
 									>
-										<Heading className="w-3.5 h-3.5" />
+										<Heading className="w-4 h-4" />
 									</button>
 
 									<button
 										type="button"
-										onClick={() => insertMarkdownTag('> ', '', '引用')}
-										title="引用"
-										className="p-1 rounded hover:bg-[#21262d] hover:text-white"
+										onClick={() => insertMarkdownTag('> ', '', '引用观点')}
+										title="引用内容"
+										className="p-1.5 rounded-md hover:bg-[#282e38] hover:text-white transition-all"
 									>
-										<Quote className="w-3.5 h-3.5" />
+										<Quote className="w-4 h-4" />
 									</button>
+
+									<span className="w-[1px] h-4 bg-gray-700/80 mx-1" />
 
 									<button
 										type="button"
 										onClick={() => insertMarkdownTag('`', '`', 'code')}
 										title="行内代码"
-										className="p-1 rounded hover:bg-[#21262d] hover:text-white"
+										className="p-1.5 rounded-md hover:bg-[#282e38] hover:text-white transition-all font-mono"
 									>
-										<Code className="w-3.5 h-3.5" />
+										<Code className="w-4 h-4" />
 									</button>
 
 									<button
 										type="button"
-										onClick={() => insertMarkdownTag('\n```\n', '\n```\n', '// 代码块')}
-										title="代码块"
-										className="p-1 rounded hover:bg-[#21262d] hover:text-white"
+										onClick={() => insertMarkdownTag('\n```\n', '\n```\n', '// 粘贴多行代码')}
+										title="插入代码块"
+										className="p-1.5 rounded-md hover:bg-[#282e38] hover:text-white transition-all"
 									>
-										<FileCode className="w-3.5 h-3.5" />
+										<FileCode className="w-4 h-4" />
 									</button>
+
+									<button
+										type="button"
+										onClick={() => insertMarkdownTag('- ', '', '列表项')}
+										title="无序列表"
+										className="p-1.5 rounded-md hover:bg-[#282e38] hover:text-white transition-all"
+									>
+										<List className="w-4 h-4" />
+									</button>
+
+									<span className="w-[1px] h-4 bg-gray-700/80 mx-1" />
 
 									<button
 										type="button"
 										onClick={handleInsertLink}
-										title="超链接"
-										className="p-1 rounded hover:bg-[#21262d] hover:text-white"
+										title="插入链接"
+										className="p-1.5 rounded-md hover:bg-[#282e38] hover:text-white transition-all"
 									>
-										<LinkIcon className="w-3.5 h-3.5" />
+										<LinkIcon className="w-4 h-4" />
 									</button>
 
 									<button
 										type="button"
 										onClick={() => commentFileInputRef.current?.click()}
-										title="上传图片"
-										className="p-1 rounded hover:bg-[#21262d] hover:text-white"
+										title="上传图片/附件"
+										className="p-1.5 rounded-md hover:bg-[#282e38] hover:text-white transition-all flex items-center gap-1"
 									>
-										<ImageIcon className="w-3.5 h-3.5" />
+										<ImageIcon className="w-4 h-4 text-emerald-400" />
+										<span className="text-[11px] text-gray-400 hidden sm:inline">传图</span>
 									</button>
 								</div>
 
+								{/* 高度加深至 150px、字体 14px、从容舒适的输入区 */}
 								<textarea
 									ref={replyTextareaRef}
-									rows={4}
+									rows={6}
 									onPaste={handleReplyPaste}
-									placeholder="支持直接点击上方工具栏排版、截图直接 Ctrl+V 贴图..."
+									placeholder="在此写下您的真知灼见（支持上方工具栏排版、截图后直接 Ctrl + V 秒贴图片）..."
 									value={replyContent}
-									onChange={e => setReplyContent(e.target.value)}
-									className="w-full bg-[#161b22] text-white text-xs p-3 outline-none leading-relaxed font-sans border-0 resize-y"
+									onChange={e => setNewContent ? undefined : setReplyContent(e.target.value)}
+									className="w-full bg-[#161b22] text-gray-100 text-[14px] p-4 outline-none leading-relaxed font-sans border-0 resize-y min-h-[140px]"
 								/>
 							</div>
 
-							<div className="flex items-center justify-between flex-wrap gap-2">
-								<div className="flex items-center gap-2">
+							<div className="flex items-center justify-between flex-wrap gap-3 pt-1">
+								<div className="flex items-center gap-3">
 									<input
 										type="file"
 										ref={commentFileInputRef}
@@ -421,20 +437,30 @@ export function PostPage() {
 										size="sm"
 										onClick={() => commentFileInputRef.current?.click()}
 										disabled={uploading}
-										className="border-[#30363d] text-gray-400 text-xs h-7"
+										className="border-[#30363d] text-gray-300 hover:text-white text-xs h-8 px-3"
 									>
-										<Paperclip className="w-3 h-3 mr-1" />
-										{uploading ? '上传中...' : '传图片'}
+										<Paperclip className="w-3.5 h-3.5 mr-1" />
+										{uploading ? '上传中...' : '上传附件图片'}
 									</Button>
+									<span className="text-[11px] text-gray-500 hidden sm:inline">
+										💡 极客技巧：截图后直接在输入框按 <strong>Ctrl + V</strong> 即可秒贴图片
+									</span>
 								</div>
-								<Button type="submit" size="sm" disabled={replying} className="bg-blue-600 hover:bg-blue-700 text-xs h-7 px-4">
-									{replying ? '发送中...' : '发表回复'}
+
+								<Button
+									type="submit"
+									size="sm"
+									disabled={replying || !replyContent.trim()}
+									className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-8 px-6 shadow-md transition-all active:scale-95"
+								>
+									<Send className="w-3.5 h-3.5 mr-1.5" />
+									{replying ? '发送中...' : '发表精彩回复'}
 								</Button>
 							</div>
 						</form>
 					) : (
-						<div className="p-4 text-center text-xs text-gray-400 border-t border-[#30363d]">
-							请 <a href="/login" className="text-blue-400 hover:underline">登录</a> 后参与讨论
+						<div className="p-8 text-center text-xs text-gray-400 border-t border-[#30363d] bg-[#0d1117]">
+							请 <a href="/login" className="text-blue-400 hover:underline font-bold">登录</a> 或 <a href="/register" className="text-blue-400 hover:underline font-bold">注册</a> 后参与讨论
 						</div>
 					)}
 				</div>
