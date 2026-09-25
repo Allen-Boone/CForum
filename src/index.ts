@@ -151,7 +151,7 @@ export default {
 			}
 		}
 
-		// POST /api/user/avatar
+		// POST /api/user/avatar (核心安全加固：严格禁止普通会员冒领“站长/管理员”称号！)
 		if (url.pathname === '/api/user/avatar' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -161,7 +161,12 @@ export default {
 					await env.cforum_db.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').bind(body.avatar_url, userPayload.id).run();
 				}
 				if (body.title !== undefined) {
-					await env.cforum_db.prepare('UPDATE users SET title = ? WHERE id = ?').bind(body.title, userPayload.id).run();
+					const requestedTitle = String(body.title || '').trim();
+					// 如果普通用户试图把称号设置成包含“站长/管理员/官方/admin”等词，当场拒绝！
+					if (userPayload.role !== 'admin' && (requestedTitle.includes('站长') || requestedTitle.includes('管理员') || requestedTitle.includes('官方') || requestedTitle.toLowerCase().includes('admin'))) {
+						return jsonResponse({ error: '权限不足：【站长】与【官方】专属称号仅限总管理员佩戴！' }, 403);
+					}
+					await env.cforum_db.prepare('UPDATE users SET title = ? WHERE id = ?').bind(requestedTitle, userPayload.id).run();
 				}
 
 				return jsonResponse({ success: true, avatar_url: body.avatar_url, title: body.title });
@@ -695,7 +700,7 @@ export default {
 			}
 		}
 
-		// 单个用户授勋
+		// 单人授勋
 		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/badges$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -716,7 +721,7 @@ export default {
 			}
 		}
 
-		// 核心新增：站长全员一键大批量授勋接口！
+		// 全员一键大授勋
 		if (url.pathname === '/api/admin/users/batch-badges' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -725,11 +730,10 @@ export default {
 				await ensureColumns();
 				const body = await request.json() as any;
 				const badge = String(body.badge || '').trim();
-				const targetScope = body.scope || 'all'; // 'all' (全员) | 'top100' (前100老会员)
+				const targetScope = body.scope || 'all';
 
 				if (!badge) return jsonResponse({ error: '请选择或输入要授予的勋章' }, 400);
 
-				// 读取指定范围的正常用户
 				let query = "SELECT id, badges FROM users WHERE username != '已注销用户'";
 				if (targetScope === 'top100') {
 					query += " ORDER BY id ASC LIMIT 100";
