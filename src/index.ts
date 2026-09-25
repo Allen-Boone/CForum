@@ -12,6 +12,7 @@ interface DBUser {
     title?: string;
     badges?: string;
     last_checkin_date?: string;
+    created_at?: string;
 }
 
 const MASTER_SECRET_KEY = new TextEncoder().encode('cforum_master_jwt_secret_key_2026_forever_valid');
@@ -158,17 +159,39 @@ export default {
 			}
 		}
 
-		// GET /api/me
+		// GET /api/me (返回信任等级统计数据)
 		if (url.pathname === '/api/me' && method === 'GET') {
 			try {
 				await ensureColumns();
 				const userPayload = await authenticate(request);
 				const user = await env.cforum_db.prepare(
-					'SELECT id, username, email, role, avatar_url, points, title, badges, last_checkin_date FROM users WHERE id = ?'
+					'SELECT id, username, email, role, avatar_url, points, title, badges, last_checkin_date, created_at FROM users WHERE id = ?'
 				).bind(userPayload.id).first<DBUser>();
 
 				if (!user) return jsonResponse({ error: 'User not found' }, 404);
 				const today = new Date().toISOString().slice(0, 10);
+
+				// 统计该用户的发帖数、回帖数
+				const [postCountRes, commentCountRes] = await Promise.all([
+					env.cforum_db.prepare('SELECT COUNT(*) as count FROM posts WHERE author_id = ?').bind(user.id).first<number>('count'),
+					env.cforum_db.prepare('SELECT COUNT(*) as count FROM comments WHERE author_id = ?').bind(user.id).first<number>('count')
+				]);
+
+				const postsCount = postCountRes || 0;
+				const commentsCount = commentCountRes || 0;
+				const userPoints = user.points ?? 0;
+
+				// 信任等级计算算法 (TL0 ~ TL4)
+				let trustLevel = 0; // TL0 新访客
+				if (user.role === 'admin' || user.role === 'moderator') {
+					trustLevel = 4; // TL4 领袖/管理员
+				} else if (user.role === 'elder' || (postsCount >= 4 && commentsCount >= 8 && userPoints >= 50)) {
+					trustLevel = 3; // TL3 社区骨干
+				} else if (postsCount >= 2 && commentsCount >= 3) {
+					trustLevel = 2; // TL2 正式成员
+				} else if (commentsCount >= 1 || userPoints >= 5) {
+					trustLevel = 1; // TL1 见习
+				}
 
 				return jsonResponse({
 					id: user.id,
@@ -176,10 +199,16 @@ export default {
 					email: user.email,
 					role: user.role || 'user',
 					avatar_url: user.avatar_url,
-					points: user.points ?? 0,
+					points: userPoints,
 					title: user.title || '🌱 初来乍到',
 					badges: user.badges ? JSON.parse(user.badges) : [],
-					checked_in_today: user.last_checkin_date === today
+					checked_in_today: user.last_checkin_date === today,
+					trust_level: trustLevel,
+					stats: {
+						posts_count: postsCount,
+						comments_count: commentsCount,
+						points: userPoints
+					}
 				});
 			} catch (e) {
 				return handleError(e);
@@ -296,7 +325,8 @@ export default {
 						points: 0,
 						title: '🌱 初来乍到',
 						badges: [],
-						checked_in_today: false
+						checked_in_today: false,
+						trust_level: 0
 					}
 				}, 201);
 			} catch (e) {
@@ -389,7 +419,7 @@ export default {
 			}
 		}
 
-		// GET /api/posts (核心算法升级：按 is_pinned 权重降序排列！权重越大的置顶贴越在最前面！)
+		// GET /api/posts
 		if (url.pathname === '/api/posts' && method === 'GET') {
 			try {
 				await ensureColumns();
@@ -417,7 +447,6 @@ export default {
 					params.push(categoryId);
 				}
 
-				// 核心排序：优先看置顶权重（99 > 2 > 1 > 0），置顶相同的再按时间排！
 				query += ' ORDER BY COALESCE(p.is_pinned, 0) DESC, p.created_at DESC LIMIT ? OFFSET ?';
 				params.push(limit, offset);
 
@@ -643,7 +672,7 @@ export default {
 			}
 		}
 
-		// POST /api/posts/:id/pin (支持站长传入自定义置顶权重)
+		// POST /api/posts/:id/pin
 		if ((url.pathname.match(/^\/api\/posts\/\d+\/pin$/) || url.pathname.match(/^\/api\/admin\/posts\/\d+\/pin$/)) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
