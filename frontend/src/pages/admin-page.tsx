@@ -4,17 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiFetch, getSecurityHeaders } from '@/lib/api';
 import { getToken, getUser } from '@/lib/auth';
-import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown, ArrowUpDown, Gavel } from 'lucide-react';
+import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown, ArrowUpDown, Gavel, Hammer, Plus, Trash2 } from 'lucide-react';
 
-const PRESET_BADGES = [
-	{ name: '🛡️ 白帽守护者', desc: '发现重大漏洞、守护社区安全', color: 'border-blue-500 bg-blue-500/10 text-blue-300' },
-	{ name: '🎖️ 创站先驱', desc: '自由论坛前 100 位骨灰级元老', color: 'border-amber-500 bg-amber-500/10 text-amber-300' },
-	{ name: '💎 贡献大佬', desc: '无私分享顶级干货技术与独家资源', color: 'border-purple-500 bg-purple-500/10 text-purple-300' },
-	{ name: '🎯 签到达人', desc: '坚持每日打卡、社区全勤劳模', color: 'border-emerald-500 bg-emerald-500/10 text-emerald-300' },
-	{ name: '🥮 中秋月圆', desc: '八月十五中秋佳节专属绝版限定', color: 'border-yellow-500 bg-yellow-500/10 text-yellow-300' },
-	{ name: '🏮 新春纳福', desc: '农历新年新春专属节日荣誉', color: 'border-rose-500 bg-rose-500/10 text-rose-300' },
-	{ name: '🛠️ 劳动模范', desc: '五一国际劳动节勤奋先锋专属', color: 'border-cyan-500 bg-cyan-500/10 text-cyan-300' }
-];
+interface SiteBadge {
+	id: number;
+	name: string;
+	description: string;
+	color: string;
+}
 
 export function AdminPage() {
 	const token = getToken();
@@ -27,13 +24,22 @@ export function AdminPage() {
 		Array<{ id: number; email: string; username: string; role: string; verified: number; created_at: string; points?: number; title?: string; badges?: string }>
 	>([]);
 
+	// 勋章军械库（动态读取数据库里的全部勋章）
+	const [badgeList, setBadgeList] = React.useState<SiteBadge[]>([]);
+	const [forgeModalOpen, setForgeModalOpen] = React.useState(false);
+	const [newBadgeName, setNewBadgeName] = React.useState('');
+	const [newBadgeDesc, setNewBadgeDesc] = React.useState('');
+	const [newBadgeColor, setNewBadgeColor] = React.useState('border-cyan-500 bg-cyan-500/10 text-cyan-300');
+
 	const [sortOrder, setSortOrder] = React.useState<'desc' | 'asc'>('desc');
 
+	// 单人授勋弹窗
 	const [badgeModalOpen, setBadgeModalOpen] = React.useState(false);
 	const [targetUser, setTargetUser] = React.useState<{ id: number; username: string } | null>(null);
 	const [selectedBadges, setSelectedBadges] = React.useState<string[]>([]);
 	const [customBadgeInput, setCustomBadgeInput] = React.useState('');
 
+	// 全员一键授勋
 	const [batchModalOpen, setBatchModalOpen] = React.useState(false);
 	const [batchBadge, setBatchBadge] = React.useState('🥮 中秋月圆');
 	const [batchScope, setBatchScope] = React.useState<'all' | 'top100'>('all');
@@ -42,6 +48,18 @@ export function AdminPage() {
 	React.useEffect(() => {
 		if (!token) window.location.href = '/login';
 	}, [token]);
+
+	const loadBadges = React.useCallback(async () => {
+		try {
+			const b = await apiFetch<SiteBadge[]>('/badges');
+			if (b && b.length > 0) {
+				setBadgeList(b);
+				if (!b.some(item => item.name === batchBadge)) {
+					setBatchBadge(b[0].name);
+				}
+			}
+		} catch (_) {}
+	}, [batchBadge]);
 
 	const refresh = React.useCallback(async () => {
 		setLoading(true);
@@ -57,18 +75,58 @@ export function AdminPage() {
 			]);
 			setStats(s);
 			setUsers(u || []);
+			await loadBadges();
 		} catch (e: any) {
 			setError(e.message || '加载后台数据失败');
 		} finally {
 			setLoading(false);
 		}
-	}, []);
+	}, [loadBadges]);
 
 	React.useEffect(() => {
 		refresh();
 	}, [refresh]);
 
-	// 核心亮点：站长专属一键抓入小黑屋公示！
+	// 核心亮点：站长手动铸造并永久入库新勋章！
+	async function handleForgeNewBadge(e: React.FormEvent) {
+		e.preventDefault();
+		if (!newBadgeName.trim()) return alert('请输入勋章名称与图标！');
+		try {
+			const res = await apiFetch<{ success: boolean; name: string }>('/admin/badges', {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify({
+					name: newBadgeName.trim(),
+					description: newBadgeDesc.trim() || '自由论坛专属稀缺特权荣誉',
+					color: newBadgeColor
+				})
+			});
+			if (res.success) {
+				alert(`🎉 铸造成功！专属勋章【${res.name}】已永久收入自由论坛勋章军械库！`);
+				setNewBadgeName('');
+				setNewBadgeDesc('');
+				setForgeModalOpen(false);
+				loadBadges();
+			}
+		} catch (err: any) {
+			alert('铸造失败: ' + err.message);
+		}
+	}
+
+	// 删除勋章库中的勋章
+	async function handleDeleteBadge(badgeId: number, name: string) {
+		if (!confirm(`确定要从军械库销毁勋章【${name}】吗？`)) return;
+		try {
+			await apiFetch(`/admin/badges/${badgeId}`, {
+				method: 'DELETE',
+				headers: getSecurityHeaders('DELETE')
+			});
+			loadBadges();
+		} catch (err: any) {
+			alert('删除失败: ' + err.message);
+		}
+	}
+
 	async function handleBanishToBlackhouse(userId: number, username: string) {
 		if (userId === 1) return alert('👑 站长主账号受系统保护，不可关押！');
 
@@ -304,10 +362,20 @@ export function AdminPage() {
 							<Shield className="w-5 h-5 text-blue-500" />
 							自由论坛 · 管理控制台
 						</h1>
-						<p className="text-xs text-gray-400 mt-1">站点统计、全站用户、小黑屋执法、全员大授勋与快捷充值中心</p>
+						<p className="text-xs text-gray-400 mt-1">站点统计、全站用户、勋章铸造、全员大授勋与快捷充值中心</p>
 					</div>
 
-					<div className="flex items-center gap-2">
+					<div className="flex items-center gap-2 flex-wrap">
+						{/* 核心亮点：站长手动铸造勋章军械库入口 */}
+						<Button
+							size="sm"
+							onClick={() => setForgeModalOpen(true)}
+							className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs h-8 px-3 shadow-md"
+						>
+							<Hammer className="w-3.5 h-3.5 mr-1" />
+							🛠️ 铸造专属勋章
+						</Button>
+
 						<Button
 							size="sm"
 							onClick={() => setBatchModalOpen(true)}
@@ -352,7 +420,7 @@ export function AdminPage() {
 					</Card>
 				</div>
 
-				{/* 会员列表与小黑屋执法 */}
+				{/* 会员列表与管理操作 */}
 				<Card className="bg-[#161b22] border-[#30363d]">
 					<CardHeader className="py-3 px-4 border-b border-[#30363d] flex flex-row items-center justify-between">
 						<CardTitle className="text-sm text-white flex items-center gap-1.5">
@@ -429,7 +497,6 @@ export function AdminPage() {
 											</td>
 											<td className="py-3 px-4 text-right">
 												<div className="flex items-center justify-end gap-1.5 flex-wrap">
-													{/* 核心亮点：站长执法【关小黑屋】按钮！ */}
 													{u.id !== 1 && (
 														<Button
 															size="sm"
@@ -493,7 +560,103 @@ export function AdminPage() {
 				</Card>
 			</div>
 
-			{/* 单人授勋弹窗 */}
+			{/* 弹窗 A：站长全可视化【勋章铸造军械库】 */}
+			{forgeModalOpen && (
+				<div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+					<div className="bg-[#161b22] border border-purple-500/50 rounded-xl max-w-xl w-full p-6 space-y-5 shadow-2xl text-white">
+						<div className="flex items-center justify-between border-b border-[#30363d] pb-3">
+							<div className="flex items-center gap-2">
+								<Hammer className="w-5 h-5 text-purple-400" />
+								<h3 className="font-bold text-base text-purple-300">自由论坛 · 勋章铸造军械库</h3>
+							</div>
+							<button onClick={() => setForgeModalOpen(false)} className="text-gray-400 hover:text-white p-1">
+								<X className="w-4 h-4" />
+							</button>
+						</div>
+
+						{/* 铸造表单 */}
+						<form onSubmit={handleForgeNewBadge} className="bg-[#0d1117] p-4 rounded-xl border border-[#21262d] space-y-3">
+							<span className="text-xs font-bold text-gray-200 block">铸造全新专属稀缺勋章：</span>
+							<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+								<div>
+									<label className="text-[11px] text-gray-400 block mb-1">勋章名称（推荐带 Emoji 图标）：</label>
+									<input
+										type="text"
+										placeholder="如：💻 认证极客、🔥 核心元老"
+										value={newBadgeName}
+										onChange={e => setNewBadgeName(e.target.value)}
+										className="w-full bg-[#161b22] border border-[#30363d] rounded px-3 py-1.5 text-xs text-white outline-none focus:border-purple-500"
+										required
+									/>
+								</div>
+								<div>
+									<label className="text-[11px] text-gray-400 block mb-1">发光主题色彩：</label>
+									<select
+										value={newBadgeColor}
+										onChange={e => setNewBadgeColor(e.target.value)}
+										className="w-full bg-[#161b22] border border-[#30363d] rounded px-3 py-1.5 text-xs text-white outline-none focus:border-purple-500"
+									>
+										<option value="border-cyan-500 bg-cyan-500/10 text-cyan-300">电光赛博蓝 (极客技术)</option>
+										<option value="border-orange-500 bg-orange-500/10 text-orange-300">炽热琥珀橙 (元老专属)</option>
+										<option value="border-purple-500 bg-purple-500/10 text-purple-300">高贵神秘紫 (特权贡献)</option>
+										<option value="border-amber-500 bg-amber-500/10 text-amber-300">璀璨流光金 (创始人/先驱)</option>
+										<option value="border-emerald-500 bg-emerald-500/10 text-emerald-300">生机翡翠绿 (活跃全勤)</option>
+										<option value="border-rose-500 bg-rose-500/10 text-rose-300">炽烈朱砂红 (节日/荣誉)</option>
+									</select>
+								</div>
+							</div>
+							<div>
+								<label className="text-[11px] text-gray-400 block mb-1">勋章描述与授予寓意：</label>
+								<input
+									type="text"
+									placeholder="如：分享优质原创技术、精通架构与代码"
+									value={newBadgeDesc}
+									onChange={e => setNewBadgeDesc(e.target.value)}
+									className="w-full bg-[#161b22] border border-[#30363d] rounded px-3 py-1.5 text-xs text-white outline-none focus:border-purple-500"
+								/>
+							</div>
+							<div className="flex justify-end pt-1">
+								<Button type="submit" size="sm" className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs h-7 px-4">
+									<Plus className="w-3.5 h-3.5 mr-1" /> 立即铸造成型
+								</Button>
+							</div>
+						</form>
+
+						{/* 现有勋章库陈列清单 */}
+						<div>
+							<span className="text-xs font-bold text-gray-400 block mb-2">当前军械库在册的全部勋章（{badgeList.length} 枚）：</span>
+							<div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+								{badgeList.map(b => (
+									<div key={b.id} className="p-2.5 rounded-lg border border-[#30363d] bg-[#0d1117] flex items-center justify-between gap-3 text-xs">
+										<div className="flex items-center gap-2.5">
+											<span className={`px-2 py-0.5 rounded border text-[11px] font-bold ${b.color}`}>
+												{b.name}
+											</span>
+											<span className="text-[11px] text-gray-400">{b.description}</span>
+										</div>
+										<button
+											type="button"
+											onClick={() => handleDeleteBadge(b.id, b.name)}
+											className="text-gray-500 hover:text-red-400 p-1 transition-colors"
+											title="从军械库销毁"
+										>
+											<Trash2 className="w-3.5 h-3.5" />
+										</button>
+									</div>
+								))}
+							</div>
+						</div>
+
+						<div className="flex justify-end border-t border-[#30363d] pt-3">
+							<Button size="sm" variant="ghost" onClick={() => setForgeModalOpen(false)} className="text-xs text-gray-400">
+								完成并关闭
+							</Button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* 弹窗 B：动态加载军械库所有勋章的【单人授勋面板】 */}
 			{badgeModalOpen && targetUser && (
 				<div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
 					<div className="bg-[#161b22] border border-[#30363d] rounded-xl max-w-lg w-full p-5 space-y-4 shadow-2xl text-white">
@@ -507,10 +670,11 @@ export function AdminPage() {
 							</button>
 						</div>
 
+						{/* 直接从后台动态勋章军械库加载！ */}
 						<div>
-							<span className="text-xs text-gray-400 block mb-2 font-medium">点击勋章直接佩戴 / 摘下：</span>
-							<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-								{PRESET_BADGES.map((b, i) => {
+							<span className="text-xs text-gray-400 block mb-2 font-medium">点击勋章直接佩戴 / 摘下（实时同步军械库）：</span>
+							<div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+								{badgeList.map((b, i) => {
 									const isSelected = selectedBadges.includes(b.name);
 									return (
 										<div
@@ -524,7 +688,7 @@ export function AdminPage() {
 										>
 											<div>
 												<span className="font-bold text-xs block text-white">{b.name}</span>
-												<span className="text-[10px] text-gray-400 leading-tight block mt-0.5">{b.desc}</span>
+												<span className="text-[10px] text-gray-400 leading-tight block mt-0.5">{b.description}</span>
 											</div>
 											<div className={`w-5 h-5 rounded-full flex items-center justify-center border ${isSelected ? 'bg-emerald-600 border-emerald-400 text-white' : 'border-gray-600'}`}>
 												{isSelected && <Check className="w-3 h-3 stroke-[3]" />}
@@ -535,8 +699,9 @@ export function AdminPage() {
 							</div>
 						</div>
 
+						{/* 自定义临时勋章输入 */}
 						<div className="space-y-1.5 pt-1 border-t border-[#21262d]">
-							<span className="text-xs text-gray-400">发明新的专属勋章（可带 Emoji 图标）：</span>
+							<span className="text-xs text-gray-400">临时手打新勋章（如需长期保存，推荐使用左上角【铸造专属勋章】）：</span>
 							<div className="flex gap-2">
 								<input
 									type="text"
@@ -551,6 +716,7 @@ export function AdminPage() {
 							</div>
 						</div>
 
+						{/* 选中的勋章列表预览 */}
 						<div className="bg-[#0d1117] p-2.5 rounded-md border border-[#21262d]">
 							<span className="text-[11px] text-gray-400 block mb-1.5">最终授予佩戴的勋章：</span>
 							{selectedBadges.length === 0 ? (
@@ -579,7 +745,7 @@ export function AdminPage() {
 				</div>
 			)}
 
-			{/* 全员一键大授勋弹窗 */}
+			{/* 弹窗 C：全员一键大授勋弹窗 */}
 			{batchModalOpen && (
 				<div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
 					<div className="bg-[#161b22] border border-amber-500/40 rounded-xl max-w-md w-full p-5 space-y-4 shadow-2xl text-white">
@@ -601,8 +767,8 @@ export function AdminPage() {
 									onChange={e => setBatchBadge(e.target.value)}
 									className="w-full bg-[#0d1117] border border-[#30363d] text-white rounded p-2 text-xs outline-none focus:border-amber-500 font-bold"
 								>
-									{PRESET_BADGES.map((b, i) => (
-										<option key={i} value={b.name}>{b.name}（{b.desc}）</option>
+									{badgeList.map((b, i) => (
+										<option key={i} value={b.name}>{b.name}（{b.description}）</option>
 									))}
 								</select>
 							</div>
