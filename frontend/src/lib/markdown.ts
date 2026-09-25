@@ -3,7 +3,7 @@ import createDOMPurify from 'dompurify';
 import { highlightElement } from '@speed-highlight/core';
 
 function escapeHtml(text: string) {
-	return text
+	return String(text || '')
 		.replace(/&/g, '&amp;')
 		.replace(/</g, '&lt;')
 		.replace(/>/g, '&gt;')
@@ -31,9 +31,12 @@ renderer.code = (({ text, lang }: { text: string; lang?: string }) => {
 	const normalized = normalizeLang(lang || '');
 	return `<div class="shj-lang-${normalized}">${escapeHtml(text)}</div>`;
 }) as any;
+
 renderer.codespan = (({ text }: { text: string }) => {
 	return `<code class="shj-inline">${escapeHtml(text)}</code>`;
 }) as any;
+
+// 核心安全加固：彻底废除 data-caption 传递 HTML，杜绝二次解析 XSS 漏洞
 renderer.image = (({ href, title, text }: { href: string; title?: string | null; text: string }) => {
 	let resolved = href || '';
 	if (resolved && !/^https?:\/\//i.test(resolved) && !resolved.startsWith('/') && !resolved.startsWith('data:')) {
@@ -41,18 +44,20 @@ renderer.image = (({ href, title, text }: { href: string; title?: string | null;
 	}
 	const src = escapeHtml(resolved);
 	const alt = escapeHtml(text || '');
-	const caption = escapeHtml(title || text || '');
-	const captionAttr = caption ? ` data-caption="${caption}"` : '';
 	if (!src) return '';
-	return `<a href="${src}" data-fancybox="gallery"${captionAttr}><img src="${src}" alt="${alt}" loading="lazy" referrerpolicy="no-referrer" /></a>`;
+
+	// 只保留安全的图片链接与灯箱标记，完全移除 data-caption
+	return `<a href="${src}" data-fancybox="gallery"><img src="${src}" alt="${alt}" loading="lazy" referrerpolicy="no-referrer" /></a>`;
 }) as any;
+
 marked.use({ renderer });
 
 export function renderMarkdownToHtml(markdown: string) {
 	const windowLike = window as unknown as Window;
 	const DOMPurify = createDOMPurify(windowLike);
 	return DOMPurify.sanitize(marked.parse(markdown) as string, {
-		ADD_ATTR: ['data-fancybox', 'data-caption', 'referrerpolicy']
+		// 从白名单中坚决剔除 data-caption，只保留纯粹的灯箱属性
+		ADD_ATTR: ['data-fancybox', 'referrerpolicy']
 	});
 }
 
@@ -67,10 +72,16 @@ export function attachFancybox(root: HTMLElement | null) {
 	if (!root) return () => {};
 	if (!root.querySelector('a[data-fancybox]')) return () => {};
 	let cancelled = false;
+
 	void import('@fancyapps/ui').then(({ Fancybox }) => {
 		if (cancelled) return;
-		Fancybox.bind(root, 'a[data-fancybox]', { groupAll: false });
+		// 安全加固：彻底禁用 Hash 自动弹窗联动，防止 URL 恶意诱导触发弹窗
+		Fancybox.bind(root, 'a[data-fancybox]', {
+			groupAll: false,
+			Hash: false as any
+		});
 	});
+
 	return () => {
 		cancelled = true;
 		void import('@fancyapps/ui').then(({ Fancybox }) => {
