@@ -170,7 +170,7 @@ export default {
 			}
 		}
 
-		// DELETE /api/user/self
+		// DELETE /api/user/self (注销只抹除个人隐私，帖子永远保留！)
 		if (url.pathname === '/api/user/self' && method === 'DELETE') {
 			try {
 				const userPayload = await authenticate(request);
@@ -180,13 +180,14 @@ export default {
 
 				const uid = userPayload.id;
 				await env.cforum_db.prepare('DELETE FROM likes WHERE user_id = ?').bind(uid).run().catch(() => {});
-				await env.cforum_db.prepare('DELETE FROM comments WHERE author_id = ?').bind(uid).run().catch(() => {});
-				await env.cforum_db.prepare('DELETE FROM posts WHERE author_id = ?').bind(uid).run().catch(() => {});
 				await env.cforum_db.prepare('DELETE FROM checkins WHERE user_id = ?').bind(uid).run().catch(() => {});
 				await env.cforum_db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(uid).run().catch(() => {});
-				await env.cforum_db.prepare('DELETE FROM users WHERE id = ?').bind(uid).run();
+				
+				// 将用户昵称改为已注销，保留其发表的精华帖供后人查阅！
+				await env.cforum_db.prepare("UPDATE users SET username = '已注销用户', email = ? WHERE id = ?")
+					.bind(`deleted_${uid}_${Date.now()}@free.com`, uid).run();
 
-				return jsonResponse({ success: true, message: '账号及所有痕迹已彻底抹除' });
+				return jsonResponse({ success: true, message: '账号已注销，感谢相伴！' });
 			} catch (e) {
 				return handleError(e);
 			}
@@ -415,7 +416,7 @@ export default {
 			}
 		}
 
-		// POST /api/posts/:id/badge (纯粹授勋：只改标签，绝不触碰任何积分，彻底防刷！)
+		// POST /api/posts/:id/badge
 		if (url.pathname.match(/^\/api\/posts\/\d+\/badge$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -433,7 +434,7 @@ export default {
 			}
 		}
 
-		// POST /api/posts/:id/reward (独立站长打赏接口：专款专用，加多少站长说了算！)
+		// POST /api/posts/:id/reward
 		if (url.pathname.match(/^\/api\/posts\/\d+\/reward$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -449,7 +450,6 @@ export default {
 				const post = await env.cforum_db.prepare('SELECT author_id, reward_points FROM posts WHERE id = ?').bind(postId).first<{ author_id: number; reward_points: number }>();
 				if (!post) return jsonResponse({ error: '帖子不存在' }, 404);
 
-				// 累计该帖获赏总额并打入作者账户
 				await env.cforum_db.prepare('UPDATE posts SET reward_points = COALESCE(reward_points, 0) + ? WHERE id = ?').bind(amount, postId).run();
 				await env.cforum_db.prepare('UPDATE users SET points = COALESCE(points, 0) + ? WHERE id = ?').bind(amount, post.author_id).run();
 
@@ -696,7 +696,6 @@ export default {
 			}
 		}
 
-		// 站长给指定用户授予/收回勋章
 		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/badges$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -717,7 +716,6 @@ export default {
 			}
 		}
 
-		// 站长调分接口
 		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/points$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
