@@ -101,7 +101,7 @@ export default {
 			}
 		}
 
-		// GET /api/community-stats (严格过滤：已注销用户绝不登上最新用户与在线头像墙！)
+		// GET /api/community-stats
 		if (url.pathname === '/api/community-stats' && method === 'GET') {
 			try {
 				await ensureColumns();
@@ -109,7 +109,6 @@ export default {
 					env.cforum_db.prepare("SELECT COUNT(*) as count FROM users WHERE username != '已注销用户'").first<number>('count'),
 					env.cforum_db.prepare('SELECT COUNT(*) as count FROM posts').first<number>('count'),
 					env.cforum_db.prepare('SELECT COUNT(*) as count FROM comments').first<number>('count'),
-					// 只选活生生的正常会员，自动把已注销用户排除在外！
 					env.cforum_db.prepare("SELECT id, username, avatar_url, role, title, badges FROM users WHERE username != '已注销用户' ORDER BY id DESC LIMIT 16").all()
 				]);
 
@@ -171,7 +170,7 @@ export default {
 			}
 		}
 
-		// DELETE /api/user/self (注销只抹除个人隐私与登录态，帖子保留)
+		// DELETE /api/user/self
 		if (url.pathname === '/api/user/self' && method === 'DELETE') {
 			try {
 				const userPayload = await authenticate(request);
@@ -696,6 +695,7 @@ export default {
 			}
 		}
 
+		// 单个用户授勋
 		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/badges$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -711,6 +711,43 @@ export default {
 				).bind(JSON.stringify(badgesArray), targetUserId).run();
 
 				return jsonResponse({ success: true, badges: badgesArray });
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// 核心新增：站长全员一键大批量授勋接口！
+		if (url.pathname === '/api/admin/users/batch-badges' && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
+
+				await ensureColumns();
+				const body = await request.json() as any;
+				const badge = String(body.badge || '').trim();
+				const targetScope = body.scope || 'all'; // 'all' (全员) | 'top100' (前100老会员)
+
+				if (!badge) return jsonResponse({ error: '请选择或输入要授予的勋章' }, 400);
+
+				// 读取指定范围的正常用户
+				let query = "SELECT id, badges FROM users WHERE username != '已注销用户'";
+				if (targetScope === 'top100') {
+					query += " ORDER BY id ASC LIMIT 100";
+				}
+				const usersList = await env.cforum_db.prepare(query).all();
+
+				let affected = 0;
+				for (const u of (usersList.results as any[])) {
+					let list: string[] = [];
+					try { list = u.badges ? JSON.parse(u.badges) : []; } catch (_) {}
+					if (!list.includes(badge)) {
+						list.push(badge);
+						await env.cforum_db.prepare('UPDATE users SET badges = ? WHERE id = ?').bind(JSON.stringify(list), u.id).run();
+						affected++;
+					}
+				}
+
+				return jsonResponse({ success: true, affected, badge });
 			} catch (e) {
 				return handleError(e);
 			}
