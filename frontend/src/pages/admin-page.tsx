@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiFetch, getSecurityHeaders, type Category } from '@/lib/api';
 import { getToken, getUser } from '@/lib/auth';
-import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown, ArrowUpDown, Gavel, Hammer, Plus, Trash2, FolderKanban, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown, ArrowUpDown, Gavel, Hammer, Plus, Trash2, FolderKanban, ChevronLeft, ChevronRight, Ban } from 'lucide-react';
 
 interface SiteBadge {
 	id: number;
@@ -21,14 +21,12 @@ export function AdminPage() {
 
 	const [stats, setStats] = React.useState<{ users: number; posts: number; comments: number } | null>(null);
 	const [users, setUsers] = React.useState<
-		Array<{ id: number; email: string; username: string; role: string; verified: number; created_at: string; points?: number; title?: string; badges?: string }>
+		Array<{ id: number; email: string; username: string; role: string; verified: number; created_at: string; points?: number; title?: string; badges?: string; reg_ip?: string }>
 	>([]);
 
-	// 动态板块分类与排序管理
 	const [categories, setCategories] = React.useState<Array<Category & { sort_order?: number }>>([]);
 	const [newCatName, setNewCatName] = React.useState('');
 
-	// 勋章军械库
 	const [badgeList, setBadgeList] = React.useState<SiteBadge[]>([]);
 	const [forgeModalOpen, setForgeModalOpen] = React.useState(false);
 	const [newBadgeName, setNewBadgeName] = React.useState('');
@@ -37,13 +35,11 @@ export function AdminPage() {
 
 	const [sortOrder, setSortOrder] = React.useState<'desc' | 'asc'>('desc');
 
-	// 单人授勋弹窗
 	const [badgeModalOpen, setBadgeModalOpen] = React.useState(false);
 	const [targetUser, setTargetUser] = React.useState<{ id: number; username: string } | null>(null);
 	const [selectedBadges, setSelectedBadges] = React.useState<string[]>([]);
 	const [customBadgeInput, setCustomBadgeInput] = React.useState('');
 
-	// 全员一键授勋
 	const [batchModalOpen, setBatchModalOpen] = React.useState(false);
 	const [batchBadge, setBatchBadge] = React.useState('🥮 中秋月圆');
 	const [batchScope, setBatchScope] = React.useState<'all' | 'top100'>('all');
@@ -97,6 +93,26 @@ export function AdminPage() {
 	React.useEffect(() => {
 		refresh();
 	}, [refresh]);
+
+	// 核心绝技：站长一键物理拉黑封死该 IP，全站拒止访问！
+	async function handleBanIp(ip?: string, username?: string) {
+		if (!ip || ip === '127.0.0.1') return alert('暂无该用户的有效外部真实IP！');
+		if (!confirm(`【站长物理级封禁 IP】\n确定要将 IP【${ip}】（用户：${username}）永久拉黑吗？\n\n封禁后，该 IP 下的所有设备将被 Cloudflare 彻底拒绝访问自由论坛，名下所有小号将同步关入小黑屋！`)) return;
+
+		try {
+			const res = await apiFetch<{ success: boolean; ip: string }>('/admin/ban-ip', {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify({ ip, reason: `站长封禁脚本恶意用户：${username}` })
+			});
+			if (res.success) {
+				alert(`🚫 IP 封禁成功！IP【${res.ip}】已被全站物理封死！`);
+				refresh();
+			}
+		} catch (err: any) {
+			alert('封禁 IP 失败: ' + err.message);
+		}
+	}
 
 	async function handleMoveOrder(index: number, direction: 'left' | 'right') {
 		const targetIndex = direction === 'left' ? index - 1 : index + 1;
@@ -472,7 +488,7 @@ export function AdminPage() {
 							<Shield className="w-5 h-5 text-blue-500" />
 							自由论坛 · 管理控制台
 						</h1>
-						<p className="text-xs text-gray-400 mt-1">站点统计、板块管理、全站用户、勋章铸造、全员大授勋与快捷充值中心</p>
+						<p className="text-xs text-gray-400 mt-1">站点统计、板块管理、全站用户、IP封杀、全员大授勋与快捷充值中心</p>
 					</div>
 
 					<div className="flex items-center gap-2 flex-wrap">
@@ -613,12 +629,12 @@ export function AdminPage() {
 					</CardContent>
 				</Card>
 
-				{/* 会员列表与管理操作（核心加固：采用 table-auto 与强制截断，杜绝任何超长字符串撑爆表格！） */}
+				{/* 会员列表与管理操作（核心亮点：展示真实注册 IP，并配备【🚫 封IP】神权按钮） */}
 				<Card className="bg-[#161b22] border-[#30363d]">
 					<CardHeader className="py-3 px-4 border-b border-[#30363d] flex flex-row items-center justify-between">
 						<CardTitle className="text-sm text-white flex items-center gap-1.5">
 							<Users className="w-4 h-4 text-blue-400" />
-							会员管理列表（共 {users.length} 位成员）
+							会员管理列表（共 {users.length} 位成员 · 含 IP 溯源与封禁）
 						</CardTitle>
 						<Button
 							size="sm"
@@ -631,15 +647,17 @@ export function AdminPage() {
 						</Button>
 					</CardHeader>
 					<CardContent className="p-0 overflow-x-auto">
-						<table className="w-full text-xs text-left text-gray-300 min-w-[700px]">
+						<table className="w-full text-xs text-left text-gray-300 min-w-[850px]">
 							<thead className="bg-[#0d1117] text-gray-400 border-b border-[#30363d]">
 								<tr>
 									<th className="py-2.5 px-4 w-16 text-center">序号</th>
-									<th className="py-2.5 px-4 max-w-[180px]">用户名</th>
-									<th className="py-2.5 px-4 max-w-[200px]">邮箱</th>
+									<th className="py-2.5 px-4 max-w-[150px]">用户名</th>
+									<th className="py-2.5 px-4 max-w-[180px]">邮箱</th>
+									{/* 站长专属 IP 显示列 */}
+									<th className="py-2.5 px-4 w-28">注册 IP 溯源</th>
 									<th className="py-2.5 px-4">称号与勋章</th>
 									<th className="py-2.5 px-4 w-20">当前积分</th>
-									<th className="py-2.5 px-4 w-28">角色等级身份</th>
+									<th className="py-2.5 px-4 w-28">角色身份</th>
 									<th className="py-2.5 px-4 text-right">站长管理操作</th>
 								</tr>
 							</thead>
@@ -653,19 +671,26 @@ export function AdminPage() {
 											<td className="py-3 px-4 text-center font-mono font-bold text-gray-400">
 												#{sequenceNumber}
 											</td>
-											{/* 核心防护：设置最大宽度和强制截断，超过 15 个字符自动省略号，彻底杜绝撑破表格！ */}
-											<td className="py-3 px-4 font-bold text-white max-w-[180px]">
+											<td className="py-3 px-4 font-bold text-white max-w-[150px]">
 												<span
 													title={u.username}
-													className={`block truncate max-w-[160px] ${u.username === '已注销用户' ? 'text-gray-500 italic' : ''}`}
+													className={`block truncate max-w-[140px] ${u.username === '已注销用户' ? 'text-gray-500 italic' : ''}`}
 												>
 													{u.username}
 												</span>
 											</td>
-											<td className="py-3 px-4 text-gray-400 font-mono max-w-[200px]">
-												<span title={u.email} className="block truncate max-w-[180px]">
+											<td className="py-3 px-4 text-gray-400 font-mono max-w-[180px]">
+												<span title={u.email} className="block truncate max-w-[160px]">
 													{u.email}
 												</span>
+											</td>
+											{/* 真实 IP 字段：仅站长可见 */}
+											<td className="py-3 px-4 font-mono text-[11px] text-cyan-400 whitespace-nowrap">
+												{u.reg_ip ? (
+													<span title="该用户的真实客户端IP">{u.reg_ip}</span>
+												) : (
+													<span className="text-gray-600">历史用户</span>
+												)}
 											</td>
 											<td className="py-3 px-4 space-y-1.5">
 												<div>
@@ -697,16 +722,30 @@ export function AdminPage() {
 												</button>
 											</td>
 											<td className="py-3 px-4 text-right whitespace-nowrap">
-												<div className="flex items-center justify-end gap-1.5 flex-nowrap">
+												<div className="flex items-center justify-end gap-1 flex-nowrap">
+													{/* 核心亮点：站长一键封杀 IP 按钮！ */}
+													{u.id !== 1 && u.reg_ip && (
+														<Button
+															size="sm"
+															variant="outline"
+															onClick={() => handleBanIp(u.reg_ip, u.username)}
+															className="border-red-600/60 text-red-400 hover:bg-red-600/20 text-xs h-6 px-1.5"
+															title="全站物理封死该用户的网络IP，拒绝其所有设备访问"
+														>
+															<Ban className="w-3 h-3 mr-0.5" />
+															封IP
+														</Button>
+													)}
+
 													{u.id !== 1 && (
 														<Button
 															size="sm"
 															variant="outline"
 															onClick={() => handleBanishToBlackhouse(u.id, u.username)}
-															className="border-rose-500/50 text-rose-300 hover:bg-rose-500/20 text-xs h-6 px-2"
+															className="border-rose-500/50 text-rose-300 hover:bg-rose-500/20 text-xs h-6 px-1.5"
 														>
-															<Gavel className="w-3 h-3 mr-1" />
-															关小黑屋
+															<Gavel className="w-3 h-3 mr-0.5" />
+															关押
 														</Button>
 													)}
 
@@ -715,10 +754,10 @@ export function AdminPage() {
 															size="sm"
 															variant="outline"
 															onClick={() => handleSetRole(u.id, u.username, u.role)}
-															className="border-purple-500/40 text-purple-300 hover:bg-purple-500/20 text-xs h-6 px-2"
+															className="border-purple-500/40 text-purple-300 hover:bg-purple-500/20 text-xs h-6 px-1.5"
 														>
-															<Crown className="w-3 h-3 mr-1" />
-															设角色
+															<Crown className="w-3 h-3 mr-0.5" />
+															角色
 														</Button>
 													)}
 
@@ -727,9 +766,9 @@ export function AdminPage() {
 															size="sm"
 															variant="outline"
 															onClick={() => handleRenameUser(u.id, u.username)}
-															className="border-sky-500/40 text-sky-300 hover:bg-sky-500/20 text-xs h-6 px-2"
+															className="border-sky-500/40 text-sky-300 hover:bg-sky-500/20 text-xs h-6 px-1.5"
 														>
-															<Pencil className="w-3 h-3 mr-1" />
+															<Pencil className="w-3 h-3 mr-0.5" />
 															改名
 														</Button>
 													)}
@@ -737,17 +776,17 @@ export function AdminPage() {
 														size="sm"
 														variant="outline"
 														onClick={() => openBadgeModal(u.id, u.username, u.badges)}
-														className="border-amber-500/40 text-amber-300 hover:bg-amber-500/20 text-xs h-6 px-2"
+														className="border-amber-500/40 text-amber-300 hover:bg-amber-500/20 text-xs h-6 px-1.5"
 													>
-														<Medal className="w-3 h-3 mr-1" />
+														<Medal className="w-3 h-3 mr-0.5" />
 														授勋
 													</Button>
 													<Button
 														size="sm"
 														onClick={() => handleAdjustPoints(u.id, u.username, u.points ?? 0)}
-														className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-6 px-2"
+														className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-6 px-1.5"
 													>
-														<Coins className="w-3 h-3 mr-1" />
+														<Coins className="w-3 h-3 mr-0.5" />
 														调分
 													</Button>
 												</div>
