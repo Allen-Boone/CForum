@@ -234,8 +234,8 @@ export default {
 				const passwordHash = await hashPassword(password);
 
 				const { success, meta } = await env.cforum_db.prepare(
-					"INSERT INTO users (email, username, password, role, verified, points, title, badges) VALUES (?, ?, ?, ?, 1, 0, ?, '[]')"
-				).bind(email, username, passwordHash, 'user', '🌱 初来乍到').run();
+					"INSERT INTO users (email, username, password, role, verified, points, title, badges) VALUES (?, ?, ?, 'user', 1, 0, ?, '[]')"
+				).bind(email, username, passwordHash, '🌱 初来乍到').run();
 
 				if (!success) return jsonResponse({ error: '注册失败' }, 500);
 
@@ -284,6 +284,7 @@ export default {
 				).bind(account, account).first<DBUser>();
 
 				if (!user || user.username === '已注销用户') return jsonResponse({ error: '账号不存在或已注销' }, 401);
+				if (user.role === 'banned') return jsonResponse({ error: '该账号因违规已被社区永久封禁！' }, 403);
 
 				const passwordHash = await hashPassword(password);
 				if (user.password !== passwordHash) return jsonResponse({ error: '密码不正确，请重新输入' }, 401);
@@ -388,17 +389,18 @@ export default {
 			}
 		}
 
-		// POST /api/posts (核心安全铁律：严格禁止普通用户往【公告】板块发帖！)
+		// POST /api/posts
 		if (url.pathname === '/api/posts' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
+				if (userPayload.role === 'banned') return jsonResponse({ error: '您的账号已被禁言封禁，无法发帖！' }, 403);
+
 				const body = await request.json() as any;
 				const { title, content, category_id } = body;
 				const catId = Number(category_id) || 1;
 
 				if (!title || !content) return jsonResponse({ error: '标题与内容不能为空' }, 400);
 
-				// 检查：分类 9 为官方【公告】板块，非管理员坚决不准发帖！
 				if (catId === 9 && userPayload.role !== 'admin') {
 					return jsonResponse({ error: '权限不足：【公告】板块为官方权威专区，仅限站长发布！' }, 403);
 				}
@@ -413,7 +415,7 @@ export default {
 			}
 		}
 
-		// PUT /api/posts/:id (修改帖子同样受公告专区保护)
+		// PUT /api/posts/:id
 		if (url.pathname.match(/^\/api\/posts\/\d+$/) && method === 'PUT') {
 			try {
 				const userPayload = await authenticate(request);
@@ -431,7 +433,6 @@ export default {
 					return jsonResponse({ error: '无权修改他人帖子' }, 403);
 				}
 
-				// 普通用户不可把帖子移入公告，也不可在公告区修改
 				if ((categoryId === 9 || post.category_id === 9) && userPayload.role !== 'admin') {
 					return jsonResponse({ error: '权限不足：【公告】板块仅限站长操作！' }, 403);
 				}
@@ -543,6 +544,8 @@ export default {
 		if (url.pathname.match(/^\/api\/posts\/\d+\/comments$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
+				if (userPayload.role === 'banned') return jsonResponse({ error: '您的账号已被禁言封禁，无法发表评论！' }, 403);
+
 				const postId = url.pathname.split('/')[3];
 				const body = await request.json() as any;
 				const content = String(body.content || '').trim();
@@ -721,6 +724,25 @@ export default {
 					'SELECT id, email, username, role, verified, created_at, avatar_url, points, title, badges FROM users ORDER BY id DESC'
 				).all();
 				return jsonResponse(users.results);
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// 核心新增：站长为指定用户设置角色等级身份！
+		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/role$/) && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
+
+				const targetUserId = Number(url.pathname.split('/')[4]);
+				if (targetUserId === 1) return jsonResponse({ error: '总站长主账号受系统保护，不可更改角色！' }, 400);
+
+				const body = await request.json() as any;
+				const newRole = String(body.role || 'user').trim();
+
+				await env.cforum_db.prepare('UPDATE users SET role = ? WHERE id = ?').bind(newRole, targetUserId).run();
+				return jsonResponse({ success: true, role: newRole });
 			} catch (e) {
 				return handleError(e);
 			}
