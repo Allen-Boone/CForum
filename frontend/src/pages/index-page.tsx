@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Gift, Flame, Zap, FolderInput, Gavel, X, CheckCircle2, ArrowUp } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Gift, Flame, Zap, FolderInput, Gavel, X, CheckCircle2, ArrowUp, Bold, Italic, Heading, Quote, Code, FileCode, List, Link as LinkIcon, Image as ImageIcon, Smile } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,8 @@ const ALL_CATEGORIES: Category[] = [
 	{ id: 8, name: '站长交流', created_at: '' },
 	{ id: 9, name: '公告', created_at: '' }
 ];
+
+const QUICK_EMOJIS = ['😂', '👍', '🔥', '🚀', '❤️', '🎉', '☕', '💎', '💡', '😎', '🫡', '🤝', '🍺', '🥳', '💯'];
 
 const SMILEY_THEMES = [
 	{ bg: '#4ade80', face: '🤩' },
@@ -168,6 +170,7 @@ export function IndexPage() {
 	const [newContent, setNewContent] = React.useState('');
 	const [newCategoryId, setNewCategoryId] = React.useState<string>(() => user?.role === 'admin' ? '9' : '1');
 	const [pinOnCreate, setPinOnCreate] = React.useState<boolean>(false);
+	const [showEmojiPicker, setShowEmojiPicker] = React.useState<boolean>(false);
 
 	const [points, setPoints] = React.useState<number>(() => (user as any)?.points ?? 0);
 	const [userTitle, setUserTitle] = React.useState<string>(() => {
@@ -190,10 +193,8 @@ export function IndexPage() {
 	const avatarInputRef = React.useRef<HTMLInputElement>(null);
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
-	// 一键平滑置顶滚动监听
 	const [showBackToTop, setShowBackToTop] = React.useState(false);
 
-	// 小黑屋与信任等级看板状态
 	const [blackhouseOpen, setBlackhouseOpen] = React.useState(false);
 	const [blackhouseList, setBlackhouseList] = React.useState<Array<{ id: number; username: string; reason: string; duration: string; created_at: string }>>([]);
 	const [trustModalOpen, setTrustModalOpen] = React.useState(false);
@@ -214,24 +215,16 @@ export function IndexPage() {
 		} catch (_) {}
 	}, []);
 
-	// 监听滚动距离，超过 200px 优雅显示回到顶部按钮
 	React.useEffect(() => {
 		function handleScroll() {
-			if (window.scrollY > 200) {
-				setShowBackToTop(true);
-			} else {
-				setShowBackToTop(false);
-			}
+			setShowBackToTop(window.scrollY > 200);
 		}
 		window.addEventListener('scroll', handleScroll, { passive: true });
 		return () => window.removeEventListener('scroll', handleScroll);
 	}, []);
 
 	function scrollToTop() {
-		window.scrollTo({
-			top: 0,
-			behavior: 'smooth'
-		});
+		window.scrollTo({ top: 0, behavior: 'smooth' });
 	}
 
 	React.useEffect(() => {
@@ -393,6 +386,37 @@ export function IndexPage() {
 		} catch (err: any) {
 			alert('注销失败：' + err.message);
 		}
+	}
+
+	// 核心亮点：智能选区包裹 Markdown 快捷编辑函数
+	function insertMarkdownTag(prefix: string, suffix: string = '', defaultPlaceholder: string = '') {
+		const textarea = textareaRef.current;
+		if (!textarea) return;
+		const start = textarea.selectionStart;
+		const end = textarea.selectionEnd;
+		const selectedText = newContent.substring(start, end) || defaultPlaceholder;
+		const replacement = `${prefix}${selectedText}${suffix}`;
+
+		const updated = newContent.substring(0, start) + replacement + newContent.substring(end);
+		setNewContent(updated);
+
+		setTimeout(() => {
+			textarea.focus();
+			textarea.setSelectionRange(start + prefix.length, start + prefix.length + selectedText.length);
+		}, 10);
+	}
+
+	function handleInsertLink() {
+		const text = prompt('请输入链接显示的文本：', '点击访问');
+		if (!text) return;
+		const url = prompt('请输入链接目标网址：', 'https://');
+		if (!url) return;
+		insertMarkdownTag(`[${text}](`, ')', url);
+	}
+
+	function handleInsertEmoji(emoji: string) {
+		insertMarkdownTag('', emoji, '');
+		setShowEmojiPicker(false);
 	}
 
 	async function uploadSingleFile(file: File) {
@@ -718,6 +742,7 @@ export function IndexPage() {
 						)}
 					</div>
 
+					{/* 发帖编辑器（带 1:1 像素级复刻的富文本工具条） */}
 					{showEditor && user && (
 						<form onSubmit={handleCreatePost} className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 space-y-3">
 							<div className="flex gap-2">
@@ -735,29 +760,146 @@ export function IndexPage() {
 								<Input placeholder="标题：请用一句话说清你的主题" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="bg-[#0d1117] border-[#30363d] text-white text-sm" />
 							</div>
 
-							<div className="relative">
-								<textarea
-									ref={textareaRef}
-									rows={7}
-									onPaste={handlePaste}
-									onDrop={handleDrop}
-									placeholder="正文内容（支持截图直接 Ctrl+V 粘贴、拖拽图片进框、支持 Markdown 语法）..."
-									value={newContent}
-									onChange={e => setNewContent(e.target.value)}
-									className="w-full bg-[#0d1117] border border-[#30363d] text-white text-sm rounded-md p-3 outline-none focus:border-blue-500 leading-relaxed font-sans"
-								/>
-								{uploadNotice && (
-									<div className="absolute bottom-3 right-3 text-xs bg-emerald-950/80 text-emerald-300 border border-emerald-700 px-2.5 py-1 rounded shadow-lg animate-pulse">
-										{uploadNotice}
+							{/* 核心亮点：1:1 像素级复刻的 Markdown 快捷编辑工具条 */}
+							<div className="border border-[#30363d] rounded-md overflow-hidden bg-[#0d1117]">
+								<div className="flex items-center gap-1 p-1.5 bg-[#161b22] border-b border-[#30363d] flex-wrap text-gray-300 text-xs select-none">
+									<div className="relative">
+										<button
+											type="button"
+											onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+											title="插入表情"
+											className="p-1.5 rounded hover:bg-[#21262d] hover:text-yellow-400 transition-colors flex items-center"
+										>
+											<Smile className="w-4 h-4" />
+										</button>
+										{showEmojiPicker && (
+											<div className="absolute top-8 left-0 z-30 bg-[#161b22] border border-[#30363d] p-2 rounded-lg shadow-xl grid grid-cols-5 gap-1.5 w-44">
+												{QUICK_EMOJIS.map((em, i) => (
+													<button
+														key={i}
+														type="button"
+														onClick={() => handleInsertEmoji(em)}
+														className="text-base p-1 hover:bg-[#21262d] rounded text-center transition-all"
+													>
+														{em}
+													</button>
+												))}
+											</div>
+										)}
 									</div>
-								)}
+
+									<span className="w-[1px] h-3.5 bg-gray-700 mx-0.5" />
+
+									<button
+										type="button"
+										onClick={() => insertMarkdownTag('**', '**', '加粗文本')}
+										title="粗体 (Bold)"
+										className="p-1.5 rounded hover:bg-[#21262d] hover:text-white transition-colors"
+									>
+										<Bold className="w-4 h-4" />
+									</button>
+
+									<button
+										type="button"
+										onClick={() => insertMarkdownTag('*', '*', '斜体文本')}
+										title="斜体 (Italic)"
+										className="p-1.5 rounded hover:bg-[#21262d] hover:text-white transition-colors"
+									>
+										<Italic className="w-4 h-4" />
+									</button>
+
+									<button
+										type="button"
+										onClick={() => insertMarkdownTag('### ', '', '大标题')}
+										title="标题 (Heading)"
+										className="p-1.5 rounded hover:bg-[#21262d] hover:text-white transition-colors"
+									>
+										<Heading className="w-4 h-4" />
+									</button>
+
+									<button
+										type="button"
+										onClick={() => insertMarkdownTag('> ', '', '引用观点')}
+										title="引用 (Quote)"
+										className="p-1.5 rounded hover:bg-[#21262d] hover:text-white transition-colors"
+									>
+										<Quote className="w-4 h-4" />
+									</button>
+
+									<span className="w-[1px] h-3.5 bg-gray-700 mx-0.5" />
+
+									<button
+										type="button"
+										onClick={() => insertMarkdownTag('`', '`', 'code')}
+										title="行内代码 (Inline Code)"
+										className="p-1.5 rounded hover:bg-[#21262d] hover:text-white transition-colors"
+									>
+										<Code className="w-4 h-4" />
+									</button>
+
+									<button
+										type="button"
+										onClick={() => insertMarkdownTag('\n```\n', '\n```\n', '// 粘贴代码块')}
+										title="多行代码块 (Code Block)"
+										className="p-1.5 rounded hover:bg-[#21262d] hover:text-white transition-colors"
+									>
+										<FileCode className="w-4 h-4" />
+									</button>
+
+									<button
+										type="button"
+										onClick={() => insertMarkdownTag('- ', '', '列表项')}
+										title="无序列表 (List)"
+										className="p-1.5 rounded hover:bg-[#21262d] hover:text-white transition-colors"
+									>
+										<List className="w-4 h-4" />
+									</button>
+
+									<span className="w-[1px] h-3.5 bg-gray-700 mx-0.5" />
+
+									<button
+										type="button"
+										onClick={handleInsertLink}
+										title="插入超链接 (Link)"
+										className="p-1.5 rounded hover:bg-[#21262d] hover:text-white transition-colors"
+									>
+										<LinkIcon className="w-4 h-4" />
+									</button>
+
+									<button
+										type="button"
+										onClick={() => fileInputRef.current?.click()}
+										title="上传图片/附件 (Image)"
+										className="p-1.5 rounded hover:bg-[#21262d] hover:text-white transition-colors"
+									>
+										<ImageIcon className="w-4 h-4" />
+									</button>
+								</div>
+
+								<div className="relative">
+									<textarea
+										ref={textareaRef}
+										rows={7}
+										onPaste={handlePaste}
+										onDrop={handleDrop}
+										placeholder="正文内容（支持点击上方工具栏快速排版、支持截图直接 Ctrl+V 秒贴图片）..."
+										value={newContent}
+										onChange={e => setNewContent(e.target.value)}
+										className="w-full bg-[#0d1117] text-white text-sm p-3 outline-none leading-relaxed font-sans border-0 resize-y"
+									/>
+									{uploadNotice && (
+										<div className="absolute bottom-3 right-3 text-xs bg-emerald-950/80 text-emerald-300 border border-emerald-700 px-2.5 py-1 rounded shadow-lg animate-pulse">
+											{uploadNotice}
+										</div>
+									)}
+								</div>
 							</div>
 
 							<div className="flex items-center justify-between pt-1 flex-wrap gap-2">
 								<div className="flex items-center gap-3">
 									<input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
 									<Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="border-[#30363d] text-gray-300 text-xs h-7">
-										<Paperclip className="w-3.5 h-3.5 mr-1" /> {uploading ? '上传中...' : '📎 上传文件/附件'}
+										<Paperclip className="w-3.5 h-3.5 mr-1" /> {uploading ? '上传中...' : '📎 附件/图片'}
 									</Button>
 									<span className="text-[11px] text-gray-400 hidden sm:inline">
 										💡 提示：截图后直接在正文框按 <strong>Ctrl + V</strong> 即可秒贴图片！
@@ -1072,7 +1214,6 @@ export function IndexPage() {
 				</div>
 			</div>
 
-			{/* 1:1 像素级复刻图 2 的「一键平滑飞回顶部（Back to Top）」悬浮圆形按钮 */}
 			{showBackToTop && (
 				<button
 					type="button"
