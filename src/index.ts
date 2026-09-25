@@ -17,6 +17,7 @@ interface DBUser {
 }
 
 const MASTER_SECRET_KEY = new TextEncoder().encode('cforum_master_jwt_secret_key_2026_forever_valid');
+const RESEND_API_KEY = 're_ABiuYEeb_6oj146a8k5Yw6SHQHqAnRqZT';
 
 function jsonResponse(data: any, status = 200, headers: Record<string, string> = {}): Response {
     return new Response(JSON.stringify(data), {
@@ -54,6 +55,7 @@ export default {
 			}
 		} catch (_) {}
 
+		// Google 官方 SEO sitemap
 		if (url.pathname === '/sitemap.xml' && method === 'GET') {
 			const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -132,6 +134,7 @@ export default {
 			await env.cforum_db.prepare("CREATE TABLE IF NOT EXISTS blackhouse (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, username TEXT, reason TEXT, duration TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)").run().catch(() => {});
 			await env.cforum_db.prepare("CREATE TABLE IF NOT EXISTS site_badges (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, description TEXT, color TEXT DEFAULT 'border-amber-500 bg-amber-500/10 text-amber-300', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)").run().catch(() => {});
 			await env.cforum_db.prepare("CREATE TABLE IF NOT EXISTS banned_ips (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT UNIQUE NOT NULL, reason TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)").run().catch(() => {});
+			await env.cforum_db.prepare("CREATE TABLE IF NOT EXISTS email_verifications (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, code TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)").run().catch(() => {});
 		};
 
 		const hasRestrictedKeywords = (username: string): boolean => {
@@ -161,6 +164,83 @@ export default {
 			if (/(.)\1{11,}/.test(text)) return true;
 			return false;
 		};
+
+		// 核心神技：POST /api/auth/send-code 发送真实 6 位验证码邮件
+		if (url.pathname === '/api/auth/send-code' && method === 'POST') {
+			try {
+				await ensureColumns();
+				const body = await request.json() as any;
+				const email = String(body.email || '').trim().toLowerCase();
+
+				if (!email || !isValidEmailDomain(email)) {
+					return jsonResponse({ error: '请输入主流有效邮箱地址（如 QQ、163、Gmail 等）' }, 400);
+				}
+
+				// 检查该邮箱是否已被注册
+				const existing = await env.cforum_db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').bind(email).first();
+				if (existing) {
+					return jsonResponse({ error: '该邮箱已被注册，请直接登录！' }, 409);
+				}
+
+				// 频率限制：同一个邮箱 60 秒内只能发一次
+				const recent = await env.cforum_db.prepare(
+					"SELECT expires_at FROM email_verifications WHERE email = ? ORDER BY id DESC LIMIT 1"
+				).bind(email).first<{ expires_at: number }>();
+
+				const nowSeconds = Math.floor(Date.now() / 1000);
+				if (recent && recent.expires_at - nowSeconds > 240) {
+					return jsonResponse({ error: '发送过于频繁，请稍等 60 秒后再试！' }, 429);
+				}
+
+				// 生成 6 位随机纯数字验证码
+				const code = Math.floor(100000 + Math.random() * 900000).toString();
+				const expiresAt = nowSeconds + 300; // 5分钟有效
+
+				// 保存入库
+				await env.cforum_db.prepare(
+					'INSERT INTO email_verifications (email, code, expires_at) VALUES (?, ?, ?)'
+				).bind(email, code, expiresAt).run();
+
+				// 调用 Resend 官方 API 发信
+				const emailHtml = `
+					<div style="background-color: #0d1117; color: #c9d1d9; padding: 40px 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center;">
+						<div style="max-width: 500px; margin: 0 auto; background-color: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 32px 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);">
+							<h2 style="color: #ffffff; margin-top: 0; font-size: 22px; letter-spacing: 1px;">🦅 自由论坛 · 欢迎加入</h2>
+							<p style="color: #8b949e; font-size: 14px; margin-bottom: 24px;">您正在注册自由论坛账号，请使用下方 6 位数字验证码完成身份验证：</p>
+							<div style="background-color: #0d1117; border: 1px solid #388bfd; border-radius: 8px; padding: 16px; margin: 24px 0; display: inline-block;">
+								<span style="font-size: 32px; font-weight: 900; letter-spacing: 6px; color: #58a6ff; font-family: monospace;">${code}</span>
+							</div>
+							<p style="color: #6e7681; font-size: 12px; margin-top: 24px;">验证码有效期为 5 分钟。如非本人操作，请忽略此邮件。</p>
+							<hr style="border: none; border-top: 1px solid #21262d; margin: 24px 0;" />
+							<p style="color: #484f58; font-size: 11px;">© 2026 自由论坛 (Freedom) · 轻量极客生活社区 · 来去自由</p>
+						</div>
+					</div>
+				`;
+
+				const resendRes = await fetch('https://api.resend.com/emails', {
+					method: 'POST',
+					headers: {
+						'Authorization': `Bearer ${RESEND_API_KEY}`,
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						from: '自由论坛官方 <onboarding@resend.dev>',
+						to: [email],
+						subject: `【自由论坛】您的注册验证码：${code}`,
+						html: emailHtml
+					})
+				});
+
+				const resendData = await resendRes.json() as any;
+				if (!resendRes.ok) {
+					return jsonResponse({ error: '邮件发送失败: ' + (resendData.message || '请稍后重试') }, 500);
+				}
+
+				return jsonResponse({ success: true, message: '验证码已发送至您的邮箱，请查收！' });
+			} catch (e: any) {
+				return handleError(e);
+			}
+		}
 
 		// GET /api/config
 		if (url.pathname === '/api/config' && method === 'GET') {
@@ -454,7 +534,7 @@ export default {
 			}
 		}
 
-		// POST /api/register
+		// POST /api/register (绝杀方案：强校验真实邮箱 6 位验证码！)
 		if (url.pathname === '/api/register' && method === 'POST') {
 			try {
 				await ensureColumns();
@@ -463,17 +543,20 @@ export default {
 					"SELECT COUNT(*) as count FROM users WHERE reg_ip = ? AND created_at > datetime('now', '-24 hours')"
 				).bind(clientIp).first<{ count: number }>();
 
-				if (ipRegCount && ipRegCount.count >= 2) {
+				if (ipRegCount && ipRegCount.count >= 3) {
 					await env.cforum_db.prepare("INSERT OR IGNORE INTO banned_ips (ip, reason) VALUES (?, '单IP恶意高频批量注册')").bind(clientIp).run().catch(() => {});
-					return jsonResponse({ error: '🚫 您的 IP 注册频率过高，涉嫌脚本批量灌水，已被系统自动拦截！' }, 429);
+					return jsonResponse({ error: '🚫 您的 IP 注册频率过高，已被系统拦截！' }, 429);
 				}
 
 				const body = await request.json() as any;
 				const email = String(body.email || '').trim().toLowerCase();
 				const username = String(body.username || '').trim();
 				const password = String(body.password || '').trim();
+				const code = String(body.code || '').trim();
 
 				if (!email || !username || !password) return jsonResponse({ error: '请填写完整用户名、邮箱和密码' }, 400);
+				if (!code) return jsonResponse({ error: '请先获取并输入邮箱 6 位验证码！' }, 400);
+
 				if (username.length < 2 || username.length > 16) {
 					return jsonResponse({ error: '用户名长度须在 2 到 16 个字符之间！' }, 400);
 				}
@@ -482,13 +565,26 @@ export default {
 				}
 
 				if (hasRestrictedKeywords(username)) {
-					return jsonResponse({ error: '该用户名包含系统官方保留词（如客服、站长、管理等），禁止注册！' }, 400);
+					return jsonResponse({ error: '该用户名包含系统官方保留词，禁止注册！' }, 400);
 				}
 
 				if (!isValidEmailDomain(email)) {
 					return jsonResponse({
-						error: '为杜绝机器人恶意批量注册，本站仅支持主流常用邮箱（如 QQ、163、126、Gmail、Outlook、iCloud、Proton 等）注册！'
+						error: '本站仅支持主流常用邮箱（如 QQ、163、126、Gmail、Outlook 等）注册！'
 					}, 400);
+				}
+
+				// 核心核验：比对该邮箱最新的 6 位验证码
+				const nowSeconds = Math.floor(Date.now() / 1000);
+				const validRecord = await env.cforum_db.prepare(
+					"SELECT id, code, expires_at FROM email_verifications WHERE email = ? ORDER BY id DESC LIMIT 1"
+				).bind(email).first<{ id: number; code: string; expires_at: number }>();
+
+				if (!validRecord || validRecord.code !== code) {
+					return jsonResponse({ error: '❌ 邮箱验证码不正确，请重新核对！' }, 400);
+				}
+				if (validRecord.expires_at < nowSeconds) {
+					return jsonResponse({ error: '❌ 验证码已过期，请重新点击获取！' }, 400);
 				}
 
 				const existing = await env.cforum_db.prepare(
@@ -506,6 +602,9 @@ export default {
 				).bind(email, username, passwordHash, '🌱 初来乍到', clientIp).run();
 
 				if (!success) return jsonResponse({ error: '注册失败' }, 500);
+
+				// 注册成功后销毁该验证码
+				await env.cforum_db.prepare('DELETE FROM email_verifications WHERE email = ?').bind(email).run().catch(() => {});
 
 				const newUserId = Number(meta.last_row_id);
 				const token = await new SignJWT({
@@ -1040,7 +1139,6 @@ export default {
 			}
 		}
 
-		// 核心神权：站长一键批量粉碎删除用户（物理抹杀，安全防呆）
 		if (url.pathname === '/api/admin/users/batch-delete' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -1052,7 +1150,6 @@ export default {
 				if (userIds.length === 0) return jsonResponse({ error: '请选择要删除的用户' }, 400);
 
 				const placeholders = userIds.map(() => '?').join(',');
-				// 物理清理：会话、签到、喜欢、无痕注销抹除
 				await env.cforum_db.prepare(`DELETE FROM likes WHERE user_id IN (${placeholders})`).bind(...userIds).run().catch(() => {});
 				await env.cforum_db.prepare(`DELETE FROM checkins WHERE user_id IN (${placeholders})`).bind(...userIds).run().catch(() => {});
 				await env.cforum_db.prepare(`DELETE FROM sessions WHERE user_id IN (${placeholders})`).bind(...userIds).run().catch(() => {});
@@ -1064,7 +1161,6 @@ export default {
 			}
 		}
 
-		// 核心神权：站长一键批量打入小黑屋
 		if (url.pathname === '/api/admin/users/batch-banish' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -1072,8 +1168,7 @@ export default {
 
 				const body = await request.json() as any;
 				const userIds = Array.isArray(body.ids) ? body.ids.map(Number).filter((id: number) => id > 1) : [];
-				const reason = String(body.reason || '站长批量处分违规小号').trim();
-				const duration = String(body.duration || '永久封禁').trim();
+				const reason = String(body.reason || '站长批量处分脚本小号').trim();
 
 				if (userIds.length === 0) return jsonResponse({ error: '请选择要关押的用户' }, 400);
 
@@ -1087,7 +1182,6 @@ export default {
 			}
 		}
 
-		// 站长单人关小黑屋
 		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/banish$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -1114,7 +1208,6 @@ export default {
 			}
 		}
 
-		// 站长设置角色等级
 		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/role$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -1133,7 +1226,6 @@ export default {
 			}
 		}
 
-		// 站长强制改名
 		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/rename$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -1155,7 +1247,6 @@ export default {
 			}
 		}
 
-		// 单人授勋
 		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/badges$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -1176,7 +1267,6 @@ export default {
 			}
 		}
 
-		// 全员一键大授勋
 		if (url.pathname === '/api/admin/users/batch-badges' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
