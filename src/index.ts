@@ -45,10 +45,8 @@ export default {
 		const url = new URL(request.url);
 		const method = request.method;
 
-		// 核心安全：获取访客真实 IP
 		const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '127.0.0.1';
 
-		// 全局第一防线：检查是否为站长封禁的恶意黑名单 IP
 		try {
 			const isBannedIp = await env.cforum_db.prepare('SELECT ip FROM banned_ips WHERE ip = ?').bind(clientIp).first();
 			if (isBannedIp) {
@@ -56,7 +54,6 @@ export default {
 			}
 		} catch (_) {}
 
-		// Google 官方 SEO sitemap
 		if (url.pathname === '/sitemap.xml' && method === 'GET') {
 			const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -457,18 +454,16 @@ export default {
 			}
 		}
 
-		// POST /api/register (三维防脚本：单IP频率熔断 + 邮箱白名单 + 自动记入客户端IP)
+		// POST /api/register
 		if (url.pathname === '/api/register' && method === 'POST') {
 			try {
 				await ensureColumns();
 
-				// 频率熔断防护：单个 IP 在 24 小时内最多只允许注册 2 个号！超过直接封杀！
 				const ipRegCount = await env.cforum_db.prepare(
 					"SELECT COUNT(*) as count FROM users WHERE reg_ip = ? AND created_at > datetime('now', '-24 hours')"
 				).bind(clientIp).first<{ count: number }>();
 
 				if (ipRegCount && ipRegCount.count >= 2) {
-					// 自动拉黑这个高频机器人 IP！
 					await env.cforum_db.prepare("INSERT OR IGNORE INTO banned_ips (ip, reason) VALUES (?, '单IP恶意高频批量注册')").bind(clientIp).run().catch(() => {});
 					return jsonResponse({ error: '🚫 您的 IP 注册频率过高，涉嫌脚本批量灌水，已被系统自动拦截！' }, 429);
 				}
@@ -506,7 +501,6 @@ export default {
 
 				const passwordHash = await hashPassword(password);
 
-				// 记入客户端 IP，给站长提供精准溯源与拉黑依据！
 				const { success, meta } = await env.cforum_db.prepare(
 					"INSERT INTO users (email, username, password, role, verified, points, title, badges, reg_ip) VALUES (?, ?, ?, 'user', 1, 0, ?, '[]', ?)"
 				).bind(email, username, passwordHash, '🌱 初来乍到', clientIp).run();
@@ -1010,7 +1004,6 @@ export default {
 			}
 		}
 
-		// GET /api/admin/users (带出真实的注册 IP，仅站长可见！)
 		if (url.pathname === '/api/admin/users' && method === 'GET') {
 			try {
 				await ensureColumns();
@@ -1026,7 +1019,6 @@ export default {
 			}
 		}
 
-		// 核心神权：站长一键物理封禁恶意 IP 地址！
 		if (url.pathname === '/api/admin/ban-ip' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -1040,7 +1032,6 @@ export default {
 				if (!targetIp || targetIp === '127.0.0.1') return jsonResponse({ error: '无法封禁无效的IP' }, 400);
 
 				await env.cforum_db.prepare("INSERT OR IGNORE INTO banned_ips (ip, reason) VALUES (?, ?)").bind(targetIp, reason).run();
-				// 同步把该 IP 下注册的所有小号全部关入小黑屋！
 				await env.cforum_db.prepare("UPDATE users SET role = 'banned' WHERE reg_ip = ? AND id != 1").bind(targetIp).run();
 
 				return jsonResponse({ success: true, ip: targetIp });
@@ -1049,7 +1040,54 @@ export default {
 			}
 		}
 
-		// 站长神权：一键打入小黑屋并公开示众
+		// 核心神权：站长一键批量粉碎删除用户（物理抹杀，安全防呆）
+		if (url.pathname === '/api/admin/users/batch-delete' && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
+
+				const body = await request.json() as any;
+				const userIds = Array.isArray(body.ids) ? body.ids.map(Number).filter((id: number) => id > 1) : [];
+
+				if (userIds.length === 0) return jsonResponse({ error: '请选择要删除的用户' }, 400);
+
+				const placeholders = userIds.map(() => '?').join(',');
+				// 物理清理：会话、签到、喜欢、无痕注销抹除
+				await env.cforum_db.prepare(`DELETE FROM likes WHERE user_id IN (${placeholders})`).bind(...userIds).run().catch(() => {});
+				await env.cforum_db.prepare(`DELETE FROM checkins WHERE user_id IN (${placeholders})`).bind(...userIds).run().catch(() => {});
+				await env.cforum_db.prepare(`DELETE FROM sessions WHERE user_id IN (${placeholders})`).bind(...userIds).run().catch(() => {});
+				await env.cforum_db.prepare(`DELETE FROM users WHERE id IN (${placeholders}) AND id != 1`).bind(...userIds).run();
+
+				return jsonResponse({ success: true, count: userIds.length });
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// 核心神权：站长一键批量打入小黑屋
+		if (url.pathname === '/api/admin/users/batch-banish' && method === 'POST') {
+			try {
+				const userPayload = await authenticate(request);
+				if (userPayload.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 403);
+
+				const body = await request.json() as any;
+				const userIds = Array.isArray(body.ids) ? body.ids.map(Number).filter((id: number) => id > 1) : [];
+				const reason = String(body.reason || '站长批量处分违规小号').trim();
+				const duration = String(body.duration || '永久封禁').trim();
+
+				if (userIds.length === 0) return jsonResponse({ error: '请选择要关押的用户' }, 400);
+
+				const placeholders = userIds.map(() => '?').join(',');
+				await env.cforum_db.prepare(`UPDATE users SET role = 'banned' WHERE id IN (${placeholders}) AND id != 1`).bind(...userIds).run();
+				await env.cforum_db.prepare(`DELETE FROM sessions WHERE user_id IN (${placeholders})`).bind(...userIds).run().catch(() => {});
+
+				return jsonResponse({ success: true, count: userIds.length });
+			} catch (e) {
+				return handleError(e);
+			}
+		}
+
+		// 站长单人关小黑屋
 		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/banish$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
