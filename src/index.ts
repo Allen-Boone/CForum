@@ -98,6 +98,19 @@ export default {
 			return restrictedKeywords.some(k => lower.includes(k));
 		};
 
+		// 核心安全：主流合规邮箱域名白名单（彻底截断机器人临时脚本小号）
+		const ALLOWED_EMAIL_DOMAINS = [
+			'qq.com', '163.com', '126.com', '139.com', '189.com', 'aliyun.com', 'sina.com', 'sina.cn', 'foxmail.com', 'yeah.net',
+			'gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com', 'icloud.com', 'proton.me', 'protonmail.com'
+		];
+
+		const isValidEmailDomain = (email: string): boolean => {
+			const parts = email.toLowerCase().split('@');
+			if (parts.length !== 2) return false;
+			const domain = parts[1].trim();
+			return ALLOWED_EMAIL_DOMAINS.includes(domain);
+		};
+
 		// GET /api/config
 		if (url.pathname === '/api/config' && method === 'GET') {
 			try {
@@ -113,7 +126,7 @@ export default {
 			}
 		}
 
-		// GET /api/blackhouse (公开小黑屋公示列表)
+		// GET /api/blackhouse
 		if (url.pathname === '/api/blackhouse' && method === 'GET') {
 			try {
 				await ensureColumns();
@@ -219,20 +232,37 @@ export default {
 			}
 		}
 
-		// POST /api/register
+		// POST /api/register (三维加固：邮箱白名单 + 用户名 2~16 字符限制 + 长度防御)
 		if (url.pathname === '/api/register' && method === 'POST') {
 			try {
 				await ensureColumns();
 				const body = await request.json() as any;
-				const email = String(body.email || '').trim();
+				const email = String(body.email || '').trim().toLowerCase();
 				const username = String(body.username || '').trim();
 				const password = String(body.password || '').trim();
 
 				if (!email || !username || !password) return jsonResponse({ error: '请填写完整用户名、邮箱和密码' }, 400);
-				if (password.length < 6) return jsonResponse({ error: '密码长度至少 6 位' }, 400);
 
+				// 1. 严格限制用户名长度：2 ~ 16 个字符，彻底杜绝 UAAAA... 刷屏
+				if (username.length < 2 || username.length > 16) {
+					return jsonResponse({ error: '用户名长度须在 2 到 16 个字符之间！' }, 400);
+				}
+
+				// 2. 严格限制密码长度：6 ~ 64 位
+				if (password.length < 6 || password.length > 64) {
+					return jsonResponse({ error: '密码长度须在 6 到 64 位之间！' }, 400);
+				}
+
+				// 3. 严格禁止官方仿冒词
 				if (hasRestrictedKeywords(username)) {
 					return jsonResponse({ error: '该用户名包含系统官方保留词（如客服、站长、管理等），禁止注册！' }, 400);
+				}
+
+				// 4. 核心加固：常用合规主流邮箱白名单检查！
+				if (!isValidEmailDomain(email)) {
+					return jsonResponse({
+						error: '为杜绝机器人恶意批量注册，本站仅支持主流常用邮箱（如 QQ、163、126、Gmail、Outlook、iCloud、Proton 等）注册！'
+					}, 400);
 				}
 
 				const existing = await env.cforum_db.prepare(
@@ -556,7 +586,7 @@ export default {
 		}
 
 		// POST /api/posts/:id/comments
-		if (url.pathname.match(/^\/api\/posts\/\d+\/comments$/) && method === 'POST') {
+		if (url.pathname === '/api/posts/:id/comments' && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
 				if (userPayload.role === 'banned') return jsonResponse({ error: '⚖️ 您的账号已被关入小黑屋，禁止发表评论！' }, 403);
@@ -744,7 +774,7 @@ export default {
 			}
 		}
 
-		// 站长神权：一键打入小黑屋并公开示众！
+		// 站长神权：一键打入小黑屋并公开示众
 		if (url.pathname.match(/^\/api\/admin\/users\/\d+\/banish$/) && method === 'POST') {
 			try {
 				const userPayload = await authenticate(request);
@@ -761,11 +791,8 @@ export default {
 				const user = await env.cforum_db.prepare('SELECT username FROM users WHERE id = ?').bind(targetUserId).first<{ username: string }>();
 				if (!user) return jsonResponse({ error: '用户不存在' }, 404);
 
-				// 1. 设置角色为 banned 封禁
 				await env.cforum_db.prepare("UPDATE users SET role = 'banned' WHERE id = ?").bind(targetUserId).run();
-				// 2. 清除该用户会话让他立刻掉线
 				await env.cforum_db.prepare("DELETE FROM sessions WHERE user_id = ?").bind(targetUserId).run().catch(() => {});
-				// 3. 记入小黑屋公开公示牌
 				await env.cforum_db.prepare("INSERT INTO blackhouse (user_id, username, reason, duration) VALUES (?, ?, ?, ?)").bind(targetUserId, user.username, reason, duration).run();
 
 				return jsonResponse({ success: true, username: user.username });
