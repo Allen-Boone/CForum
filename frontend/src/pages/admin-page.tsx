@@ -2,9 +2,9 @@ import * as React from 'react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { apiFetch, getSecurityHeaders, type Category } from '@/lib/api';
+import { apiFetch, getSecurityHeaders } from '@/lib/api';
 import { getToken, getUser } from '@/lib/auth';
-import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown } from 'lucide-react';
+import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown, ArrowUpDown } from 'lucide-react';
 
 const PRESET_BADGES = [
 	{ name: '🛡️ 白帽守护者', desc: '发现重大漏洞、守护社区安全', color: 'border-blue-500 bg-blue-500/10 text-blue-300' },
@@ -26,6 +26,9 @@ export function AdminPage() {
 	const [users, setUsers] = React.useState<
 		Array<{ id: number; email: string; username: string; role: string; verified: number; created_at: string; points?: number; title?: string; badges?: string }>
 	>([]);
+
+	// 排序状态：默认降序展示最新注册
+	const [sortOrder, setSortOrder] = React.useState<'desc' | 'asc'>('desc');
 
 	const [badgeModalOpen, setBadgeModalOpen] = React.useState(false);
 	const [targetUser, setTargetUser] = React.useState<{ id: number; username: string } | null>(null);
@@ -66,7 +69,6 @@ export function AdminPage() {
 		refresh();
 	}, [refresh]);
 
-	// 核心亮点：站长专属设置角色等级
 	async function handleSetRole(userId: number, username: string, currentRole: string) {
 		if (userId === 1) return alert('👑 站长主账号受系统保护，角色不可更改！');
 
@@ -230,7 +232,6 @@ export function AdminPage() {
 		}
 	}
 
-	// 渲染不同角色专属的酷炫勋章标签
 	function renderRoleBadge(role: string) {
 		switch (role) {
 			case 'admin':
@@ -251,6 +252,17 @@ export function AdminPage() {
 				return <span className="bg-gray-800 text-gray-400 border border-gray-700 px-2 py-0.5 rounded text-[11px]">🌱 普通会员</span>;
 		}
 	}
+
+	// 连续整齐排列逻辑：排序并生成 1, 2, 3, 4, 5... 连续序号
+	const sortedUsers = React.useMemo(() => {
+		const list = [...users];
+		if (sortOrder === 'asc') {
+			list.sort((a, b) => a.id - b.id);
+		} else {
+			list.sort((a, b) => b.id - a.id);
+		}
+		return list;
+	}, [users, sortOrder]);
 
 	return (
 		<PageShell>
@@ -309,19 +321,29 @@ export function AdminPage() {
 					</Card>
 				</div>
 
-				{/* 会员列表与角色管理 */}
+				{/* 会员列表：严谨连续序号排列 + 点击可切换正序/倒序 */}
 				<Card className="bg-[#161b22] border-[#30363d]">
-					<CardHeader className="py-3 px-4 border-b border-[#30363d]">
+					<CardHeader className="py-3 px-4 border-b border-[#30363d] flex flex-row items-center justify-between">
 						<CardTitle className="text-sm text-white flex items-center gap-1.5">
 							<Users className="w-4 h-4 text-blue-400" />
-							会员管理、角色等级册封、荣誉勋章与积分充值
+							会员管理列表（共 {users.length} 位成员）
 						</CardTitle>
+						<Button
+							size="sm"
+							variant="ghost"
+							onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+							className="text-xs text-sky-400 hover:text-sky-300 h-7 px-2"
+						>
+							<ArrowUpDown className="w-3.5 h-3.5 mr-1" />
+							{sortOrder === 'desc' ? '当前：最新注册在前' : '当前：最早元老在前'}
+						</Button>
 					</CardHeader>
 					<CardContent className="p-0 overflow-x-auto">
 						<table className="w-full text-xs text-left text-gray-300">
 							<thead className="bg-[#0d1117] text-gray-400 border-b border-[#30363d]">
 								<tr>
-									<th className="py-2.5 px-4">ID</th>
+									{/* 核心升级：自然连续序号，整整齐齐绝对不跳号！ */}
+									<th className="py-2.5 px-4 w-16 text-center">序号</th>
 									<th className="py-2.5 px-4">用户名</th>
 									<th className="py-2.5 px-4">邮箱</th>
 									<th className="py-2.5 px-4">称号与勋章</th>
@@ -331,13 +353,22 @@ export function AdminPage() {
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-[#21262d]">
-								{users.map(u => {
+								{sortedUsers.map((u, index) => {
 									const userBadges = parseUserBadges(u.badges);
+									// 自然连续序号：从 1, 2, 3... 一直到 30，整齐治愈！
+									const sequenceNumber = sortOrder === 'desc' ? users.length - index : index + 1;
+
 									return (
 										<tr key={u.id} className="hover:bg-[#1c2128]">
-											<td className="py-3 px-4">{u.id}</td>
-											<td className="py-3 px-4 font-bold text-white">{u.username}</td>
-											<td className="py-3 px-4 text-gray-400">{u.email}</td>
+											<td className="py-3 px-4 text-center font-mono font-bold text-gray-400">
+												#{sequenceNumber}
+											</td>
+											<td className="py-3 px-4 font-bold text-white flex items-center gap-1.5">
+												<span className={u.username === '已注销用户' ? 'text-gray-500 italic' : ''}>
+													{u.username}
+												</span>
+											</td>
+											<td className="py-3 px-4 text-gray-400 font-mono">{u.email}</td>
 											<td className="py-3 px-4 space-y-1.5">
 												<div>
 													<span className="bg-blue-950/60 text-blue-300 border border-blue-800/60 px-1.5 py-0.5 rounded text-[11px]">
@@ -358,7 +389,6 @@ export function AdminPage() {
 												✨ {u.points ?? 0}
 											</td>
 											<td className="py-3 px-4">
-												{/* 角色标签：支持直接点击触发改角色！ */}
 												<button
 													type="button"
 													onClick={() => handleSetRole(u.id, u.username, u.role)}
@@ -370,7 +400,6 @@ export function AdminPage() {
 											</td>
 											<td className="py-3 px-4 text-right">
 												<div className="flex items-center justify-end gap-1.5 flex-wrap">
-													{/* 站长专属：设角色按钮 */}
 													{u.id !== 1 && (
 														<Button
 															size="sm"
