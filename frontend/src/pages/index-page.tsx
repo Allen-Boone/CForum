@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Gift, Flame, Zap, FolderInput } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Gift, Flame, Zap, FolderInput, Gavel, X } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -190,6 +190,10 @@ export function IndexPage() {
 	const avatarInputRef = React.useRef<HTMLInputElement>(null);
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
+	// 小黑屋前台弹窗状态
+	const [blackhouseOpen, setBlackhouseOpen] = React.useState(false);
+	const [blackhouseList, setBlackhouseList] = React.useState<Array<{ id: number; username: string; reason: string; duration: string; created_at: string }>>([]);
+
 	const [commStats, setCommStats] = React.useState<{
 		topics: number;
 		replies: number;
@@ -260,6 +264,16 @@ export function IndexPage() {
 		} catch (err: any) {
 			alert(err.message || '今日已经签过到啦！');
 			setCheckedIn(true);
+		}
+	}
+
+	async function handleOpenBlackhouse() {
+		try {
+			const list = await apiFetch<any[]>('/blackhouse');
+			setBlackhouseList(list || []);
+			setBlackhouseOpen(true);
+		} catch (e: any) {
+			alert('读取小黑屋名单失败: ' + e.message);
 		}
 	}
 
@@ -494,7 +508,6 @@ export function IndexPage() {
 		}
 	}
 
-	// 核心亮点：站长专属一键移动帖子板块！
 	async function handleMoveCategory(postId: number, currentTitle: string) {
 		const menu = ALL_CATEGORIES.map(c => `${c.id} = ${c.name}`).join('\n');
 		const input = prompt(
@@ -795,7 +808,6 @@ export function IndexPage() {
 
 													{isAdmin && (
 														<span className="ml-auto flex items-center gap-2.5 flex-wrap">
-															{/* 站长专属快捷移板块按钮 */}
 															<button
 																type="button"
 																onClick={() => handleMoveCategory(post.id, post.title)}
@@ -961,9 +973,9 @@ export function IndexPage() {
 						<div className="grid grid-cols-2 gap-y-2 text-gray-400">
 							<span onClick={handleCheckin} className="hover:text-emerald-400 cursor-pointer text-emerald-500 font-medium">• 每日签到（领积分）</span>
 							<span onClick={() => avatarInputRef.current?.click()} className="hover:text-sky-400 cursor-pointer text-sky-400 font-medium">• 📷 更换个性头像</span>
+							<span onClick={handleOpenBlackhouse} className="hover:text-rose-400 cursor-pointer text-rose-400 font-bold flex items-center gap-1">• <Gavel className="w-3 h-3" /> 社区小黑屋</span>
 							<span onClick={handleSwitchTitle} className="hover:text-blue-400 cursor-pointer">• 我的称号仓库</span>
 							<span onClick={() => setActiveTab('featured')} className="hover:text-purple-400 cursor-pointer text-purple-400 font-medium">• 💎 精华神帖列表</span>
-							<span className="hover:text-white cursor-pointer">• 社区热榜</span>
 							<span onClick={handleDeleteOwnAccount} className="hover:text-rose-400 cursor-pointer text-rose-400/90 font-medium">• 🚪 账号注销(自由)</span>
 						</div>
 					</div>
@@ -996,6 +1008,56 @@ export function IndexPage() {
 					</div>
 				</div>
 			</div>
+
+			{/* 社区小黑屋公示大弹窗 */}
+			{blackhouseOpen && (
+				<div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+					<div className="bg-[#161b22] border border-rose-500/40 rounded-xl max-w-lg w-full p-5 space-y-4 shadow-2xl text-white">
+						<div className="flex items-center justify-between border-b border-[#30363d] pb-3">
+							<div className="flex items-center gap-2">
+								<Gavel className="w-5 h-5 text-rose-500" />
+								<h3 className="font-bold text-base text-rose-400">自由论坛 · 社区小黑屋公示墙</h3>
+							</div>
+							<button onClick={() => setBlackhouseOpen(false)} className="text-gray-400 hover:text-white p-1">
+								<X className="w-4 h-4" />
+							</button>
+						</div>
+
+						<p className="text-xs text-gray-400 leading-relaxed">
+							为维护纯粹、友善、不被欺诈的极客交流秩序，以下违规账号已被站长关入小黑屋反省，处分期间剥夺发言与活动权限：
+						</p>
+
+						<div className="max-h-60 overflow-y-auto divide-y divide-[#21262d] border border-[#30363d] rounded-lg bg-[#0d1117]">
+							{blackhouseList.length === 0 ? (
+								<div className="py-8 text-center text-xs text-gray-500">
+									🕊️ 天朗气清，当前暂无被关押的违规人员。
+								</div>
+							) : (
+								blackhouseList.map((item) => (
+									<div key={item.id} className="p-3 text-xs flex items-center justify-between gap-3">
+										<div>
+											<span className="font-bold text-rose-300 block">{item.username}</span>
+											<span className="text-[11px] text-gray-400 block mt-0.5">罪由：{item.reason}</span>
+										</div>
+										<div className="text-right flex-shrink-0">
+											<span className="bg-rose-950/60 text-rose-400 border border-rose-800/60 px-2 py-0.5 rounded text-[10px] font-bold block">
+												{item.duration}
+											</span>
+											<span className="text-[10px] text-gray-500 block mt-1">{formatDate(item.created_at)}</span>
+										</div>
+									</div>
+								))
+							)}
+						</div>
+
+						<div className="flex justify-end pt-2 border-t border-[#30363d]">
+							<Button size="sm" onClick={() => setBlackhouseOpen(false)} className="bg-gray-800 hover:bg-gray-700 text-xs">
+								关闭公示窗口
+							</Button>
+						</div>
+					</div>
+				</div>
+			)}
 		</PageShell>
 	);
 }
