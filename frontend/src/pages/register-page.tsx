@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiFetch, getSecurityHeaders } from '@/lib/api';
 import { setToken, setUser } from '@/lib/auth';
+import { TurnstileWidget } from '@/components/turnstile';
 import { Mail, Lock, User, CheckCircle2, ShieldCheck, Info } from 'lucide-react';
 
 export function RegisterPage() {
@@ -14,11 +15,24 @@ export function RegisterPage() {
 	const [code, setCode] = React.useState('');
 	const [error, setError] = React.useState('');
 	const [loading, setLoading] = React.useState(false);
+	const [turnstileEnabled, setTurnstileEnabled] = React.useState(false);
+	const [turnstileSiteKey, setTurnstileSiteKey] = React.useState('');
+	const [turnstileToken, setTurnstileToken] = React.useState('');
+	const [turnstileResetKey, setTurnstileResetKey] = React.useState(0);
 
 	// 发送验证码与 60s 倒计时
 	const [sendingCode, setSendingCode] = React.useState(false);
 	const [countdown, setCountdown] = React.useState(0);
 	const [codeSentNotice, setCodeSentNotice] = React.useState('');
+
+	React.useEffect(() => {
+		apiFetch<{ turnstile_enabled: boolean; turnstile_site_key: string }>('/config')
+			.then(config => {
+				setTurnstileEnabled(Boolean(config.turnstile_enabled));
+				setTurnstileSiteKey(config.turnstile_site_key || '');
+			})
+			.catch(() => setTurnstileEnabled(false));
+	}, []);
 
 	React.useEffect(() => {
 		if (countdown > 0) {
@@ -32,6 +46,10 @@ export function RegisterPage() {
 			setError('请先填写注册邮箱！');
 			return;
 		}
+		if (turnstileEnabled && !turnstileToken) {
+			setError('请先完成人机验证！');
+			return;
+		}
 		setError('');
 		setSendingCode(true);
 		setCodeSentNotice('');
@@ -40,7 +58,10 @@ export function RegisterPage() {
 			const res = await apiFetch<{ success: boolean; message: string }>('/auth/send-code', {
 				method: 'POST',
 				headers: getSecurityHeaders('POST'),
-				body: JSON.stringify({ email: email.trim() })
+				body: JSON.stringify({
+					email: email.trim(),
+					turnstile_token: turnstileToken
+				})
 			});
 			if (res.success) {
 				setCodeSentNotice('✅ 验证码已发送至您的邮箱，请前往查收并填入！');
@@ -50,6 +71,8 @@ export function RegisterPage() {
 			setError(err.message || '发送验证码失败');
 		} finally {
 			setSendingCode(false);
+			setTurnstileToken('');
+			setTurnstileResetKey(value => value + 1);
 		}
 	}
 
@@ -144,6 +167,18 @@ export function RegisterPage() {
 							</span>
 						</div>
 					</div>
+
+					{turnstileEnabled && turnstileSiteKey && (
+						<div className="rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2 overflow-hidden">
+							<div className="text-[11px] text-gray-400 mb-1">安全验证：完成后才能获取邮箱验证码</div>
+							<TurnstileWidget
+								enabled={turnstileEnabled}
+								siteKey={turnstileSiteKey}
+								onToken={setTurnstileToken}
+								resetKey={turnstileResetKey}
+							/>
+						</div>
+					)}
 
 					{/* 6位验证码输入框 */}
 					<div className="space-y-1.5">
