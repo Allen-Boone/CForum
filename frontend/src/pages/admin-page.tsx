@@ -26,6 +26,9 @@ export function AdminPage() {
 
 	// 核心亮点：批量勾选用户 ID 列表
 	const [selectedUserIds, setSelectedUserIds] = React.useState<number[]>([]);
+	const [selectedBatchBadgesModalOpen, setSelectedBatchBadgesModalOpen] = React.useState(false);
+	const [batchSelectedBadges, setBatchSelectedBadges] = React.useState<string[]>([]);
+	const [batchAssigning, setBatchAssigning] = React.useState(false);
 
 	const [categories, setCategories] = React.useState<Array<Category & { sort_order?: number }>>([]);
 	const [newCatName, setNewCatName] = React.useState('');
@@ -134,6 +137,42 @@ export function AdminPage() {
 			}
 		} catch (err: any) {
 			alert('批量删除失败: ' + err.message);
+		}
+	}
+
+	function handleOpenBatchAssignBadges() {
+		if (selectedUserIds.length === 0) return;
+		setBatchSelectedBadges([]);
+		setSelectedBatchBadgesModalOpen(true);
+	}
+
+	function toggleBatchAssignBadge(name: string) {
+		setBatchSelectedBadges(prev =>
+			prev.includes(name) ? prev.filter(b => b !== name) : [...prev, name]
+		);
+	}
+
+	async function handleExecuteBatchAssignBadges() {
+		if (selectedUserIds.length === 0 || batchSelectedBadges.length === 0 || batchAssigning) return;
+		setBatchAssigning(true);
+		try {
+			const res = await apiFetch<{ success: boolean; count: number; updated: number }>('/admin/users/batch-assign-badges', {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify({
+					ids: selectedUserIds,
+					badges: batchSelectedBadges
+				})
+			});
+			if (res.success) {
+				alert(`🎉 批量授勋成功！已为选中的 ${res.count} 位用户成功发放勋章！`);
+				setSelectedBatchBadgesModalOpen(false);
+				refresh();
+			}
+		} catch (err: any) {
+			alert('批量授勋失败: ' + err.message);
+		} finally {
+			setBatchAssigning(false);
 		}
 	}
 
@@ -726,6 +765,15 @@ export function AdminPage() {
 										<Gavel className="w-3.5 h-3.5 mr-1" />
 										批量关押
 									</Button>
+									<Button
+										size="sm"
+										variant="outline"
+										onClick={handleOpenBatchAssignBadges}
+										className="border-amber-500/60 text-amber-300 hover:bg-amber-500/20 text-xs h-7 px-2.5 font-bold"
+									>
+										<Medal className="w-3.5 h-3.5 mr-1" />
+										批量授勋
+									</Button>
 								</div>
 							)}
 						</div>
@@ -924,6 +972,87 @@ export function AdminPage() {
 					</CardContent>
 				</Card>
 			</div>
+
+			{/* 弹窗：选定用户批量授勋 */}
+			{selectedBatchBadgesModalOpen && (
+				<div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+					<div className="bg-[#161b22] border border-amber-500/40 rounded-xl max-w-lg w-full p-5 space-y-4 shadow-2xl text-white animate-in fade-in zoom-in-95 duration-150">
+						<div className="flex items-center justify-between border-b border-[#30363d] pb-3">
+							<div className="flex items-center gap-2">
+								<Medal className="w-5 h-5 text-amber-400" />
+								<h3 className="font-bold text-sm text-amber-300">
+									批量授勋中心 · 当前已选【{selectedUserIds.length} 位会员】
+								</h3>
+							</div>
+							<button onClick={() => setSelectedBatchBadgesModalOpen(false)} className="text-gray-400 hover:text-white p-1">
+								<X className="w-4 h-4" />
+							</button>
+						</div>
+
+						<div className="space-y-3 text-xs">
+							<p className="text-gray-400">
+								请点击勾选要为这 {selectedUserIds.length} 位用户批量佩戴的荣誉勋章（可多选，已佩戴过的用户会自动跳过）：
+							</p>
+
+							<div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+								{badgeList.map((b, i) => {
+									const isSelected = batchSelectedBadges.includes(b.name);
+									return (
+										<div
+											key={i}
+											onClick={() => toggleBatchAssignBadge(b.name)}
+											className={`p-2.5 rounded-lg border cursor-pointer transition-all flex items-center justify-between select-none ${
+												isSelected
+													? `${b.color} border-2 shadow-md`
+													: 'border-[#30363d] bg-[#0d1117]/60 hover:bg-[#0d1117] text-gray-400'
+											}`}
+										>
+											<div>
+												<span className="font-bold text-xs block text-white">{b.name}</span>
+												<span className="text-[10px] text-gray-400 leading-tight block mt-0.5">{b.description}</span>
+											</div>
+											<div className={`w-5 h-5 rounded-full flex items-center justify-center border ${isSelected ? 'bg-emerald-600 border-emerald-400 text-white' : 'border-gray-600'}`}>
+												{isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+											</div>
+										</div>
+									);
+								})}
+							</div>
+
+							<div className="bg-[#0d1117] p-2.5 rounded-md border border-[#21262d]">
+								<span className="text-[11px] text-gray-400 block mb-1.5">准备批量授予的勋章：</span>
+								{batchSelectedBadges.length === 0 ? (
+									<span className="text-xs text-gray-500 italic">（请在上方至少点击选择一枚勋章）</span>
+								) : (
+									<div className="flex flex-wrap gap-1.5">
+										{batchSelectedBadges.map((b, i) => (
+											<span key={i} className="bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded text-xs font-bold flex items-center gap-1">
+												{b}
+												<button type="button" onClick={() => toggleBatchAssignBadge(b)} className="text-amber-300/60 hover:text-red-400 ml-0.5">✕</button>
+											</span>
+										))}
+									</div>
+								)}
+							</div>
+						</div>
+
+						<div className="flex items-center justify-end gap-2 pt-2 border-t border-[#30363d]">
+							<Button type="button" size="sm" variant="ghost" onClick={() => setSelectedBatchBadgesModalOpen(false)} className="text-xs text-gray-400">
+								取消
+							</Button>
+							<Button
+								type="button"
+								size="sm"
+								disabled={batchAssigning || batchSelectedBadges.length === 0}
+								onClick={handleExecuteBatchAssignBadges}
+								className="bg-amber-600 hover:bg-amber-700 text-black font-extrabold text-xs px-5 shadow-lg"
+							>
+								{batchAssigning ? '正在批量发放...' : `确认发放给选中的 ${selectedUserIds.length} 人`}
+							</Button>
+						</div>
+					</div>
+				</div>
+			)}
 
 			{/* 弹窗 A：勋章铸造军械库 */}
 			{forgeModalOpen && (
