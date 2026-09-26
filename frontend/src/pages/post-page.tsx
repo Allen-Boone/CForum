@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { apiFetch, formatDate, getSecurityHeaders, type Post, type Comment } from '@/lib/api';
 import { getToken, getUser } from '@/lib/auth';
 import { renderMarkdownToHtml, highlightCodeBlocks, attachFancybox } from '@/lib/markdown';
-import { Heart, MessageSquare, ArrowLeft, Pin, Trash2, Smile, Paperclip, Bold, Italic, Heading, Quote, Code, FileCode, List, Link as LinkIcon, Image as ImageIcon, Send } from 'lucide-react';
+import { Heart, MessageSquare, ArrowLeft, Pin, Trash2, Smile, Paperclip, Bold, Italic, Heading, Quote, Code, FileCode, List, Link as LinkIcon, Image as ImageIcon, Send, Pencil, X, Save } from 'lucide-react';
 
 const QUICK_EMOJIS = ['😂', '👍', '🔥', '🚀', '❤️', '🎉', '☕', '💎', '💡', '😎', '🫡', '🤝', '🍺', '🥳', '💯', '✨', '👏', '👀', '🤯', '💪'];
 
@@ -20,6 +20,15 @@ export function PostPage() {
 	const [likeCount, setLikeCount] = React.useState(0);
 	const [uploading, setUploading] = React.useState(false);
 	const [showEmojiPicker, setShowEmojiPicker] = React.useState(false);
+
+	const [editOpen, setEditOpen] = React.useState(false);
+	const [editTitle, setEditTitle] = React.useState('');
+	const [editContent, setEditContent] = React.useState('');
+	const [editCategoryId, setEditCategoryId] = React.useState('1');
+	const [editCategories, setEditCategories] = React.useState<
+		Array<{ id: number; name: string }>
+	>([]);
+	const [editSaving, setEditSaving] = React.useState(false);
 
 	const replyTextareaRef = React.useRef<HTMLTextAreaElement>(null);
 	const commentFileInputRef = React.useRef<HTMLInputElement>(null);
@@ -181,6 +190,104 @@ export function PostPage() {
 		}
 	}
 
+	async function openPostEditor() {
+		if (!post || !user) return;
+
+		const canEdit =
+			user.role === 'admin' ||
+			user.id === post.author_id;
+
+		if (!canEdit) {
+			alert('您没有权限编辑该帖子');
+			return;
+		}
+
+		setEditTitle(post.title || '');
+		setEditContent(post.content || '');
+		setEditCategoryId(
+			String(post.category_id || 1)
+		);
+
+		try {
+			const categories = await apiFetch<
+				Array<{ id: number; name: string }>
+			>('/categories');
+
+			setEditCategories(categories || []);
+			setEditOpen(true);
+		} catch (err: any) {
+			alert(
+				'读取板块失败：' +
+					(err.message || '未知错误')
+			);
+		}
+	}
+
+	async function handleSavePostEdit(
+		event: React.FormEvent
+	) {
+		event.preventDefault();
+
+		if (!post || !user || editSaving) return;
+
+		const title = editTitle.trim();
+		const content = editContent.trim();
+		const categoryId = Number(editCategoryId);
+
+		if (!title) {
+			alert('帖子标题不能为空');
+			return;
+		}
+
+		if (!content) {
+			alert('帖子正文不能为空');
+			return;
+		}
+
+		if (title.length > 120) {
+			alert('帖子标题不能超过 120 个字符');
+			return;
+		}
+
+		if (!Number.isInteger(categoryId)) {
+			alert('请选择有效的板块');
+			return;
+		}
+
+		if (
+			categoryId === 9 &&
+			user.role !== 'admin'
+		) {
+			alert('公告板块仅限站长操作');
+			return;
+		}
+
+		setEditSaving(true);
+
+		try {
+			await apiFetch(`/posts/${post.id}`, {
+				method: 'PUT',
+				headers: getSecurityHeaders('PUT'),
+				body: JSON.stringify({
+					title,
+					content,
+					category_id: categoryId
+				})
+			});
+
+			setEditOpen(false);
+			await loadPostData();
+			alert('帖子修改成功');
+		} catch (err: any) {
+			alert(
+				'修改失败：' +
+					(err.message || '未知错误')
+			);
+		} finally {
+			setEditSaving(false);
+		}
+	}
+
 	async function handleLike() {
 		if (!postId || !token) return;
 		try {
@@ -295,17 +402,34 @@ export function PostPage() {
 						</div>
 					)}
 
-					<div className="flex items-center justify-between border-t border-[#30363d] pt-4">
-						<Button
-							size="sm"
-							variant="outline"
-							onClick={handleLike}
+					<div className="flex items-center justify-between border-t border-[#30363d] pt-4 gap-3 flex-wrap">
+						<div className="flex items-center gap-2">
+							<Button
+								size="sm"
+								variant="outline"
+								onClick={handleLike}
 							disabled={!user}
 							className={`text-xs h-8 border-[#30363d] ${liked ? 'text-rose-400 border-rose-500/50 bg-rose-500/10' : 'text-gray-300'}`}
 						>
 							<Heart className={`w-3.5 h-3.5 mr-1.5 ${liked ? 'fill-rose-500 text-rose-500' : ''}`} />
 							{liked ? '已点赞' : '点赞支持'} ({likeCount})
-						</Button>
+							</Button>
+
+							{user &&
+								(user.role === 'admin' ||
+									user.id === post.author_id) && (
+									<Button
+										type="button"
+										size="sm"
+										variant="outline"
+										onClick={openPostEditor}
+										className="text-xs h-8 border-sky-500/40 text-sky-300 hover:bg-sky-500/10"
+									>
+										<Pencil className="w-3.5 h-3.5 mr-1.5" />
+										编辑帖子
+									</Button>
+								)}
+						</div>
 					</div>
 				</div>
 
@@ -528,6 +652,146 @@ export function PostPage() {
 					)}
 				</div>
 			</div>
+
+			{editOpen && post && (
+				<div className="fixed inset-0 z-[130] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+					<form
+						onSubmit={handleSavePostEdit}
+						className="w-full max-w-3xl bg-[#161b22] border border-[#30363d] rounded-xl shadow-2xl overflow-hidden my-6"
+					>
+						<div className="flex items-center justify-between px-5 py-4 border-b border-[#30363d]">
+							<div>
+								<h2 className="text-base font-bold text-white flex items-center gap-2">
+									<Pencil className="w-4 h-4 text-sky-400" />
+									编辑帖子
+								</h2>
+								<p className="text-[11px] text-gray-500 mt-1">
+									修改标题、正文或所属板块
+								</p>
+							</div>
+
+							<button
+								type="button"
+								onClick={() => setEditOpen(false)}
+								className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-[#21262d]"
+								title="关闭"
+							>
+								<X className="w-4 h-4" />
+							</button>
+						</div>
+
+						<div className="p-5 space-y-4">
+							<div className="space-y-1.5">
+								<label className="text-xs font-medium text-gray-300">
+									帖子标题
+								</label>
+
+								<input
+									type="text"
+									value={editTitle}
+									maxLength={120}
+									onChange={event =>
+										setEditTitle(
+											event.target.value
+										)
+									}
+									className="w-full h-10 rounded-md bg-[#0d1117] border border-[#30363d] px-3 text-sm text-white outline-none focus:border-blue-500"
+									placeholder="请输入帖子标题"
+									required
+								/>
+
+								<div className="text-right text-[10px] text-gray-600">
+									{editTitle.length}/120
+								</div>
+							</div>
+
+							<div className="space-y-1.5">
+								<label className="text-xs font-medium text-gray-300">
+									所属板块
+								</label>
+
+								<select
+									value={editCategoryId}
+									onChange={event =>
+										setEditCategoryId(
+											event.target.value
+										)
+									}
+									className="w-full h-10 rounded-md bg-[#0d1117] border border-[#30363d] px-3 text-sm text-white outline-none focus:border-blue-500"
+								>
+									{editCategories
+										.filter(category =>
+											user.role === 'admin'
+												? true
+												: category.id !== 9
+										)
+										.map(category => (
+											<option
+												key={category.id}
+												value={category.id}
+											>
+												{category.id === 9
+													? '📢 公告（站长专属）'
+													: category.name}
+											</option>
+										))}
+								</select>
+							</div>
+
+							<div className="space-y-1.5">
+								<label className="text-xs font-medium text-gray-300">
+									帖子正文
+								</label>
+
+								<textarea
+									value={editContent}
+									onChange={event =>
+										setEditContent(
+											event.target.value
+										)
+									}
+									rows={15}
+									className="w-full min-h-[320px] resize-y rounded-md bg-[#0d1117] border border-[#30363d] p-3 text-sm leading-relaxed text-white outline-none focus:border-blue-500 font-mono"
+									placeholder="支持 Markdown 格式"
+									required
+								/>
+
+								<p className="text-[11px] text-gray-500">
+									支持 Markdown。保存后公开/私密与搜索引擎收录设置不会改变。
+								</p>
+							</div>
+						</div>
+
+						<div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-[#30363d] bg-[#0d1117]">
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								onClick={() => setEditOpen(false)}
+								className="text-xs text-gray-400"
+							>
+								取消
+							</Button>
+
+							<Button
+								type="submit"
+								size="sm"
+								disabled={
+									editSaving ||
+									!editTitle.trim() ||
+									!editContent.trim()
+								}
+								className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-5"
+							>
+								<Save className="w-3.5 h-3.5 mr-1.5" />
+								{editSaving
+									? '保存中...'
+									: '保存修改'}
+							</Button>
+						</div>
+					</form>
+				</div>
+			)}
 		</PageShell>
 	);
 }
