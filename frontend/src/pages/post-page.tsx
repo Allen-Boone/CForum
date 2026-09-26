@@ -602,7 +602,7 @@ export function PostPage() {
 									onPaste={handleReplyPaste}
 									placeholder="在此写下您的真知灼见（支持上方工具栏排版、截图后直接 Ctrl + V 秒贴图片）..."
 									value={replyContent}
-									onChange={e => setNewContent ? undefined : setReplyContent(e.target.value)}
+									onChange={e => setReplyContent(e.target.value)}
 									className="w-full bg-[#161b22] text-gray-100 text-[14px] p-4 outline-none leading-relaxed font-sans border-0 resize-y min-h-[140px]"
 								/>
 							</div>
