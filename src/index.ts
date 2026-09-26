@@ -1576,6 +1576,45 @@ export default {
 			}
 		}
 
+		if (url.pathname === '/api/admin/users/batch-assign-badges' && method === 'POST') {
+			try {
+				await requireAdmin(request);
+				await ensureSchema();
+				const body = (await request.json()) as any;
+				const userIds = Array.isArray(body.ids) ? Array.from(new Set(body.ids.map(Number).filter((id: number) => Number.isInteger(id) && id >= 1))) : [];
+				const badgesToAdd = Array.isArray(body.badges) ? Array.from(new Set(body.badges.map((v: unknown) => String(v).trim()).filter(Boolean))) : [];
+
+				if (!userIds.length) return jsonResponse({ error: '请选择要授勋的用户' }, 400);
+				if (!badgesToAdd.length) return jsonResponse({ error: '请至少选择一枚要授予的勋章' }, 400);
+
+				let updatedCount = 0;
+				for (let start = 0; start < userIds.length; start += 50) {
+					const batchIds = userIds.slice(start, start + 50);
+					const placeholders = batchIds.map(() => '?').join(',');
+					const selectedUsers = await db.prepare(`SELECT id, badges FROM users WHERE id IN (${placeholders})`).bind(...batchIds).all<{ id: number; badges: string }>();
+
+					for (const target of selectedUsers.results || []) {
+						const currentBadges = safeJsonArray(target.badges);
+						let changed = false;
+						for (const b of badgesToAdd) {
+							if (!currentBadges.includes(b)) {
+								currentBadges.push(b);
+								changed = true;
+							}
+						}
+						if (changed) {
+							await db.prepare(`UPDATE users SET badges = ? WHERE id = ?`).bind(JSON.stringify(currentBadges), target.id).run();
+							updatedCount++;
+						}
+					}
+				}
+
+				return jsonResponse({ success: true, count: userIds.length, updated: updatedCount });
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
 		if (url.pathname === '/api/admin/users/batch-badges' && method === 'POST') {
 			try {
 				await requireAdmin(request);
