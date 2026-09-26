@@ -502,7 +502,7 @@ export default {
 		}
 
 		/*
-		 * 发送邮箱验证码（完美对齐已通过官方认证的域名 mail.t20.de5.net！）
+		 * 发送邮箱验证码（防内容拦截合规模板）
 		 */
 		if (
 			url.pathname === '/api/auth/send-code' &&
@@ -603,28 +603,42 @@ export default {
 					`${email}:${code}`
 				);
 
-				const emailHtml = `
-<div style="margin:0;background:#0d1117;padding:40px 16px;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
-	<div style="max-width:520px;margin:0 auto;background:#161b22;border:1px solid #30363d;border-radius:14px;padding:32px 24px;text-align:center">
-		<div style="font-size:28px;margin-bottom:8px">🕊️</div>
-		<h1 style="margin:0;color:#ffffff;font-size:22px">自由论坛 · 邮箱验证</h1>
-		<p style="margin:16px 0 24px;color:#8b949e;font-size:14px;line-height:1.7">
-			您正在注册自由论坛账号，请输入下方 6 位验证码完成验证。
-		</p>
-		<div style="display:inline-block;background:#0d1117;border:1px solid #388bfd;border-radius:10px;padding:16px 22px">
-			<span style="color:#58a6ff;font-size:32px;font-weight:900;letter-spacing:7px;font-family:monospace">${code}</span>
-		</div>
-		<p style="margin:24px 0 0;color:#6e7681;font-size:12px">
-			验证码 5 分钟内有效。请勿将验证码转发给任何人。
-		</p>
-		<hr style="border:0;border-top:1px solid #21262d;margin:24px 0">
-		<p style="margin:0;color:#484f58;font-size:11px">
-			© 2026 自由论坛 · 轻量极客生活社区 · 来去自由
-		</p>
-	</div>
-</div>`;
+				// 纯文本版本（合规必需，极大降低垃圾邮件评分）
+				const plainText = `[自由论坛] 您的注册验证码为：${code}。验证码在 5 分钟内有效，请在注册页面填入完成验证。如非本人操作请忽略此邮件。`;
 
-				// 100% 匹配你在 Resend 验证通过的完整域名：mail.t20.de5.net！
+				// 简洁规范的企业级 HTML 邮件模板（去除可疑符号，提升邮件可信度）
+				const emailHtml = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>自由论坛注册验证码</title>
+</head>
+<body style="margin:0;padding:24px 12px;background-color:#f6f8fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#24292f;">
+  <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+    <tr>
+      <td align="center">
+        <table role="presentation" style="max-width:540px;width:100%;background-color:#ffffff;border:1px solid #d0d7de;border-radius:8px;padding:32px;box-sizing:border-box;">
+          <tr>
+            <td>
+              <h2 style="margin:0 0 16px 0;font-size:20px;font-weight:600;color:#0969da;">自由论坛 (CForum)</h2>
+              <p style="margin:0 0 12px 0;font-size:14px;line-height:1.6;color:#57606a;">您正在申请注册自由论坛账号，请使用下方的验证码完成身份验证：</p>
+              <div style="margin:24px 0;padding:16px;background-color:#f6f8fa;border:1px dashed #0969da;border-radius:6px;text-align:center;">
+                <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:32px;font-weight:700;letter-spacing:6px;color:#0969da;">${code}</span>
+              </div>
+              <p style="margin:0 0 8px 0;font-size:13px;line-height:1.5;color:#57606a;">• 该验证码有效期为 5 分钟，请尽快填入。</p>
+              <p style="margin:0 0 24px 0;font-size:13px;line-height:1.5;color:#57606a;">• 如非您本人操作，请忽略本邮件，账号信息不会发生变化。</p>
+              <hr style="border:none;border-top:1px solid #d0d7de;margin:24px 0 16px 0;">
+              <p style="margin:0;font-size:12px;color:#8c959f;text-align:center;">此为系统自动发送邮件，请勿直接回复。</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
 				const resendResponse = await fetch(
 					'https://api.resend.com/emails',
 					{
@@ -640,7 +654,8 @@ export default {
 								'自由论坛 <auth@mail.t20.de5.net>',
 							to: [email],
 							subject:
-								'【自由论坛】注册邮箱验证码',
+								`【自由论坛】您的注册验证码：${code}`,
+							text: plainText,
 							html: emailHtml
 						})
 					}
@@ -785,7 +800,7 @@ export default {
 							'SELECT COUNT(*) AS count FROM comments'
 						)
 						.first<{ count: number }>()
-				]);
+					]);
 
 				return jsonResponse({
 					topics: Number(
