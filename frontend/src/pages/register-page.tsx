@@ -160,10 +160,11 @@ export function RegisterPage() {
 						</div>
 
 						{/* 贴心引导提示栏 */}
-						<div className="flex items-start gap-1.5 text-[11px] text-amber-400/90 bg-amber-500/10 border border-amber-500/20 p-2 rounded-md leading-relaxed mt-1">
-							<Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-amber-400" />
+						<div className="flex items-start gap-2 text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/30 p-2.5 rounded-lg leading-relaxed mt-1.5">
+							<Info className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-400" />
 							<span>
-								<strong>推荐使用 QQ、163、Foxmail 邮箱</strong>，验证码秒级送达；Gmail 首次接收可能会有少许延迟或进入垃圾箱。
+								<strong className="text-yellow-300">最推荐：</strong>国内最稳妥、秒级到达的是 <strong>QQ 邮箱、163 邮箱或 Foxmail</strong>。<br />
+								<span className="text-gray-300">本站全面支持 @outlook.com、@hotmail.com、Gmail 等常用邮箱；如使用海外/微软邮箱未收到，请务必查看<strong>「垃圾邮件箱」</strong>。</span>
 							</span>
 						</div>
 					</div>
