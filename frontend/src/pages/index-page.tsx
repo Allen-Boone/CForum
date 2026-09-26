@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { apiFetch, formatDate, getSecurityHeaders, type Category, type Post } from '@/lib/api';
 import { getToken, getUser, logout, setUser } from '@/lib/auth';
+import { UserProfileModal } from '@/components/user-profile-modal';
 
 const QUICK_EMOJIS = ['😂', '👍', '🔥', '🚀', '❤️', '🎉', '☕', '💎', '💡', '😎', '🫡', '🤝', '🍺', '🥳', '💯'];
 
@@ -21,10 +22,27 @@ const SMILEY_THEMES = [
 	{ bg: '#2dd4bf', face: '😁' }
 ];
 
-function CuteCircleAvatar({ name, avatarUrl, index }: { name: string; avatarUrl?: string | null; index: number }) {
+function CuteCircleAvatar({
+	userId,
+	name,
+	avatarUrl,
+	index,
+	onOpen
+}: {
+	userId: number;
+	name: string;
+	avatarUrl?: string | null;
+	index: number;
+	onOpen: (userId: number) => void;
+}) {
 	const theme = SMILEY_THEMES[index % SMILEY_THEMES.length];
 	return (
-		<div className="flex flex-col items-center group cursor-pointer">
+		<button
+			type="button"
+			onClick={() => onOpen(userId)}
+			className="flex flex-col items-center group cursor-pointer"
+			title={`查看 ${name} 的公开资料`}
+		>
 			<div className="relative w-11 h-11">
 				{avatarUrl ? (
 					<img src={avatarUrl} alt={name} className="w-11 h-11 rounded-full object-cover border border-[#30363d]" />
@@ -36,7 +54,7 @@ function CuteCircleAvatar({ name, avatarUrl, index }: { name: string; avatarUrl?
 				<span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-[#3fb950] border-2 border-[#161b22]" />
 			</div>
 			<span className="mt-1.5 text-[11px] text-gray-300 group-hover:text-white truncate w-14 text-center">{name}</span>
-		</div>
+		</button>
 	);
 }
 
@@ -185,6 +203,7 @@ export function IndexPage() {
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
 	const [showBackToTop, setShowBackToTop] = React.useState(false);
+	const [profileUserId, setProfileUserId] = React.useState<number | null>(null);
 
 	const [blackhouseOpen, setBlackhouseOpen] = React.useState(false);
 	const [blackhouseList, setBlackhouseList] = React.useState<Array<{ id: number; username: string; reason: string; duration: string; created_at: string }>>([]);
@@ -1181,6 +1200,7 @@ export function IndexPage() {
 							<span onClick={handleOpenBlackhouse} className="hover:text-rose-400 cursor-pointer text-rose-400 font-bold flex items-center gap-1">• <Gavel className="w-3 h-3" /> 社区小黑屋</span>
 							<span onClick={handleSwitchTitle} className="hover:text-blue-400 cursor-pointer">• 我的称号仓库</span>
 							<span onClick={() => setActiveTab('featured')} className="hover:text-purple-400 cursor-pointer text-purple-400 font-medium">• 💎 精华神帖列表</span>
+							<a href="/messages" className="hover:text-cyan-300 text-cyan-400 font-medium">• 💬 我的私信</a>
 							<span onClick={handleDeleteOwnAccount} className="hover:text-rose-400 cursor-pointer text-rose-400/90 font-medium">• 🚪 账号注销(自由)</span>
 						</div>
 					</div>
@@ -1194,7 +1214,14 @@ export function IndexPage() {
 							<h4 className="font-bold text-white text-sm mb-3">最新用户</h4>
 							<div className="grid grid-cols-4 gap-y-3 gap-x-2">
 								{displayLatestUsers.map((u, idx) => (
-									<CuteCircleAvatar key={`latest-${u.id}-${idx}`} name={u.username} avatarUrl={u.avatar_url} index={idx} />
+									<CuteCircleAvatar
+												key={`latest-${u.id}-${idx}`}
+												userId={u.id}
+												name={u.username}
+												avatarUrl={u.avatar_url}
+												index={idx}
+												onOpen={setProfileUserId}
+											/>
 								))}
 							</div>
 						</div>
@@ -1207,7 +1234,14 @@ export function IndexPage() {
 						</div>
 						<div className="grid grid-cols-4 gap-y-3 gap-x-2 pt-1">
 							{displayOnlineUsers.map((u, idx) => (
-								<CuteCircleAvatar key={`online-${u.id}-${idx}`} name={u.username} avatarUrl={u.avatar_url} index={idx + 3} />
+								<CuteCircleAvatar
+											key={`online-${u.id}-${idx}`}
+											userId={u.id}
+											name={u.username}
+											avatarUrl={u.avatar_url}
+											index={idx + 3}
+											onOpen={setProfileUserId}
+										/>
 							))}
 						</div>
 					</div>
@@ -1470,6 +1504,10 @@ export function IndexPage() {
 					</div>
 				</div>
 			)}
+			<UserProfileModal
+				userId={profileUserId}
+				onClose={() => setProfileUserId(null)}
+			/>
 		</PageShell>
 	);
 }

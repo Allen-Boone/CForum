@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify } from 'jose';
+import { handleDirectMessageRoute } from './direct-messages';
 
 interface DBUser {
 	id: number;
@@ -284,6 +285,17 @@ export default {
 			}
 			return currentUser;
 		};
+
+		const directMessageResponse = await handleDirectMessageRoute(
+			request,
+			{ cforum_db: db },
+			authenticate
+		);
+
+		if (directMessageResponse) {
+			return directMessageResponse;
+		}
+
 
 		if (url.pathname === '/sitemap.xml' && method === 'GET') {
 			try {
