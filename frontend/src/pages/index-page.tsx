@@ -169,7 +169,7 @@ export function IndexPage() {
 	// 动态实时板块列表（从后端完整读取排序）
 	const [categories, setCategories] = React.useState<Category[]>([]);
 	const [selectedCategory, setSelectedCategory] = React.useState<string>('all');
-	const [posts, setPosts] = React.useState<Array<Post & { badge?: string | null; reward_points?: number; author_badges?: string; is_pinned?: number }>>([]);
+	const [posts, setPosts] = React.useState<Array<Post & { badge?: string | null; reward_points?: number; author_badges?: string; is_pinned?: number; is_public?: number; allow_index?: number }>>([]);
 	const [loading, setLoading] = React.useState<boolean>(true);
 
 	const [activeTab, setActiveTab] = React.useState<'latest_reply' | 'latest_post' | 'featured' | 'recommend' | 'original'>('latest_reply');
@@ -271,7 +271,7 @@ export function IndexPage() {
 				loadPosts();
 			})();
 		} else {
-			setLoading(false);
+			loadPosts();
 		}
 	}, [token, loadStats, loadCategories]);
 
@@ -621,6 +621,52 @@ export function IndexPage() {
 		}
 	}
 
+	async function handlePostVisibility(
+		postId: number,
+		currentPublic: number,
+		currentIndex: number,
+		action: 'public' | 'index'
+	) {
+		let nextPublic = currentPublic ? 1 : 0;
+		let nextIndex = currentIndex ? 1 : 0;
+
+		if (action === 'public') {
+			nextPublic = currentPublic ? 0 : 1;
+			if (nextPublic === 0) nextIndex = 0;
+		} else {
+			if (!currentPublic) {
+				alert('请先将帖子设为游客公开，再允许搜索引擎收录。');
+				return;
+			}
+			nextIndex = currentIndex ? 0 : 1;
+		}
+
+		const promptText =
+			action === 'public'
+				? nextPublic
+					? '确定将该帖子设为游客公开吗？'
+					: '确定将该帖子设为会员私密吗？收录状态也会关闭。'
+				: nextIndex
+					? '确定允许搜索引擎收录该帖子吗？'
+					: '确定禁止搜索引擎收录该帖子吗？';
+
+		if (!confirm(promptText)) return;
+
+		try {
+			await apiFetch(`/admin/posts/${postId}/visibility`, {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify({
+					is_public: nextPublic,
+					allow_index: nextIndex
+				})
+			});
+			await loadPosts();
+		} catch (err: any) {
+			alert('设置失败：' + (err.message || '未知错误'));
+		}
+	}
+
 	async function handleDeletePost(postId: number, title: string) {
 		if (!confirm(`确定要删除《${title}》吗？`)) return;
 		try {
@@ -937,7 +983,24 @@ export function IndexPage() {
 						</form>
 					)}
 
-					{!user ? (
+					{!user && (
+						<div className="bg-[#161b22] border border-blue-500/30 rounded-lg p-4 text-center space-y-2">
+							<div className="text-sm font-bold text-white">🌍 游客只读模式</div>
+							<p className="text-xs text-gray-400">
+								您可以阅读公开内容；登录后可查看会员帖子并参与点赞、回复、发帖和私聊。
+							</p>
+							<div className="flex items-center justify-center gap-2">
+								<Button asChild size="sm" variant="outline">
+									<a href="/login">登录</a>
+								</Button>
+								<Button asChild size="sm" className="bg-blue-600 text-white">
+									<a href="/register">免费注册</a>
+								</Button>
+							</div>
+						</div>
+					)}
+
+					{false ? (
 						<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-12 text-center space-y-4">
 							<div className="w-14 h-14 rounded-full bg-blue-600/10 border border-blue-500/30 flex items-center justify-center mx-auto text-blue-400">
 								<Lock className="w-7 h-7" />
@@ -1025,6 +1088,31 @@ export function IndexPage() {
 
 													{isAdmin && (
 														<span className="ml-auto flex items-center gap-2.5 flex-wrap">
+											<button
+												type="button"
+												onClick={() => handlePostVisibility(
+													post.id,
+													Number(post.is_public || 0),
+													Number(post.allow_index || 0),
+													'public'
+												)}
+												className="text-[11px] text-emerald-400 hover:underline font-medium"
+											>
+												{Number(post.is_public || 0) === 1 ? '🔒 转私密' : '🌍 设公开'}
+											</button>
+
+											<button
+												type="button"
+												onClick={() => handlePostVisibility(
+													post.id,
+													Number(post.is_public || 0),
+													Number(post.allow_index || 0),
+													'index'
+												)}
+												className="text-[11px] text-cyan-400 hover:underline font-medium"
+											>
+												{Number(post.allow_index || 0) === 1 ? '🚫 禁收录' : '🔎 允收录'}
+											</button>
 															<button
 																type="button"
 																onClick={() => handleMoveCategory(post.id, post.title)}

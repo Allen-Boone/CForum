@@ -9,8 +9,11 @@ export const onRequest: PagesFunction = async (context) => {
 	const pathname = url.pathname;
 	const isApiRoute = pathname.startsWith('/api/');
 	const isR2Route = pathname.startsWith('/r2/');
+	const isSeoRoute =
+		pathname === '/sitemap.xml' ||
+		pathname === '/robots.txt';
 
-	if (!isApiRoute && !isR2Route) {
+	if (!isApiRoute && !isR2Route && !isSeoRoute) {
 		return context.next();
 	}
 
