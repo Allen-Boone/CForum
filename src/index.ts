@@ -502,7 +502,7 @@ export default {
 		}
 
 		/*
-		 * 发送邮箱验证码（防内容拦截合规模板）
+		 * 发送邮箱验证码（使用中英双语标准事务模板，优化投递率）
 		 */
 		if (
 			url.pathname === '/api/auth/send-code' &&
@@ -603,33 +603,40 @@ export default {
 					`${email}:${code}`
 				);
 
-				// 纯文本版本（合规必需，极大降低垃圾邮件评分）
-				const plainText = `[自由论坛] 您的注册验证码为：${code}。验证码在 5 分钟内有效，请在注册页面填入完成验证。如非本人操作请忽略此邮件。`;
+				const plainText = `CForum Verification Code: ${code}
 
-				// 简洁规范的企业级 HTML 邮件模板（去除可疑符号，提升邮件可信度）
+Your verification code is ${code}. Please enter this code within 5 minutes to verify your email address.
+
+自由论坛验证码：${code}
+请在 5 分钟内完成验证。如非本人操作，请忽略此邮件。
+
+--
+CForum Support Team
+https://blog.t20.de5.net`;
+
 				const emailHtml = `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>自由论坛注册验证码</title>
+<title>Verification Code</title>
 </head>
-<body style="margin:0;padding:24px 12px;background-color:#f6f8fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#24292f;">
+<body style="margin:0;padding:24px 16px;background-color:#f6f8fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#24292f;line-height:1.6;">
   <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
     <tr>
       <td align="center">
-        <table role="presentation" style="max-width:540px;width:100%;background-color:#ffffff;border:1px solid #d0d7de;border-radius:8px;padding:32px;box-sizing:border-box;">
+        <table role="presentation" style="max-width:540px;width:100%;background-color:#ffffff;border:1px solid #d0d7de;border-radius:6px;padding:32px;box-sizing:border-box;text-align:left;">
           <tr>
             <td>
-              <h2 style="margin:0 0 16px 0;font-size:20px;font-weight:600;color:#0969da;">自由论坛 (CForum)</h2>
-              <p style="margin:0 0 12px 0;font-size:14px;line-height:1.6;color:#57606a;">您正在申请注册自由论坛账号，请使用下方的验证码完成身份验证：</p>
-              <div style="margin:24px 0;padding:16px;background-color:#f6f8fa;border:1px dashed #0969da;border-radius:6px;text-align:center;">
-                <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:32px;font-weight:700;letter-spacing:6px;color:#0969da;">${code}</span>
+              <h2 style="margin:0 0 16px 0;font-size:18px;font-weight:600;color:#24292f;">CForum Verification Code</h2>
+              <p style="margin:0 0 16px 0;font-size:14px;color:#57606a;">Please use the following single-use verification code to complete your registration:</p>
+              <div style="margin:20px 0;padding:14px 20px;background-color:#f6f8fa;border:1px solid #d0d7de;border-radius:6px;text-align:center;">
+                <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:28px;font-weight:700;letter-spacing:5px;color:#0969da;">${code}</span>
               </div>
-              <p style="margin:0 0 8px 0;font-size:13px;line-height:1.5;color:#57606a;">• 该验证码有效期为 5 分钟，请尽快填入。</p>
-              <p style="margin:0 0 24px 0;font-size:13px;line-height:1.5;color:#57606a;">• 如非您本人操作，请忽略本邮件，账号信息不会发生变化。</p>
-              <hr style="border:none;border-top:1px solid #d0d7de;margin:24px 0 16px 0;">
-              <p style="margin:0;font-size:12px;color:#8c959f;text-align:center;">此为系统自动发送邮件，请勿直接回复。</p>
+              <p style="margin:0 0 8px 0;font-size:12px;color:#57606a;">This code will expire in 5 minutes. If you did not request this, you can safely ignore this email.</p>
+              <p style="margin:0 0 20px 0;font-size:12px;color:#57606a;">验证码有效时间为 5 分钟。如非您本人操作，请忽略此邮件。</p>
+              <hr style="border:none;border-top:1px solid #d0d7de;margin:20px 0 16px 0;">
+              <p style="margin:0;font-size:11px;color:#8c959f;text-align:center;">This is an automated notification from CForum. Please do not reply directly.</p>
             </td>
           </tr>
         </table>
@@ -651,10 +658,10 @@ export default {
 						},
 						body: JSON.stringify({
 							from:
-								'自由论坛 <auth@mail.t20.de5.net>',
+								'CForum <auth@mail.t20.de5.net>',
 							to: [email],
 							subject:
-								`【自由论坛】您的注册验证码：${code}`,
+								`CForum Verification Code: ${code}`,
 							text: plainText,
 							html: emailHtml
 						})
@@ -800,7 +807,7 @@ export default {
 							'SELECT COUNT(*) AS count FROM comments'
 						)
 						.first<{ count: number }>()
-					]);
+				]);
 
 				return jsonResponse({
 					topics: Number(
