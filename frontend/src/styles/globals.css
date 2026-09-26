@@ -1,9 +1,40 @@
+html {
+	font-size: 15px; /* 基准字号从默认提升，保障整体可读性 */
+	-webkit-text-size-adjust: 100%;
+}
 
 html, body, button, input, select, textarea, table, th, td {
-	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'WenQuanYi Micro Hei', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol' !important;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", ui-sans-serif, system-ui, sans-serif !important;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
+	text-rendering: optimizeLegibility;
+	letter-spacing: -0.01em;
 }
+
+/* 核心表格舒适度重构：彻底告别压抑的微缩感 */
+table th {
+	font-size: 0.8125rem !important; /* 约 13px，不再是 11px */
+	padding-top: 0.75rem !important;
+	padding-bottom: 0.75rem !important;
+	letter-spacing: 0.02em;
+}
+
+table td {
+	font-size: 0.875rem !important; /* 约 14px，字字清晰饱满 */
+	padding-top: 0.85rem !important;
+	padding-bottom: 0.85rem !important;
+	line-height: 1.5 !important;
+}
+
+/* 勋章与标签不再做过小的 10px 字体，最低保障 12px，圆润舒适 */
+.text-\[10px\] {
+	font-size: 11.5px !important;
+}
+.text-\[11px\] {
+	font-size: 12.5px !important;
+}
+
+
 
 @tailwind base;
 @tailwind components;
