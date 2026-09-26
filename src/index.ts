@@ -1,4 +1,8 @@
 import { SignJWT, jwtVerify } from 'jose';
+import {
+	guardVerificationEmail,
+	recordVerificationEmailResult
+} from './email-verification-security';
 import { handleDirectMessageRoute } from './direct-messages';
 
 interface DBUser {
@@ -219,6 +223,9 @@ export default {
 			await db.prepare(`CREATE TABLE IF NOT EXISTS site_badges (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, description TEXT, color TEXT DEFAULT 'border-amber-500 bg-amber-500/10 text-amber-300', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`).run().catch(() => {});
 			await db.prepare(`CREATE TABLE IF NOT EXISTS banned_ips (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT UNIQUE NOT NULL, reason TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`).run().catch(() => {});
 			await db.prepare(`CREATE TABLE IF NOT EXISTS email_verifications (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, code TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`).run().catch(() => {});
+			await db.prepare(`CREATE TABLE IF NOT EXISTS email_send_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL, email TEXT NOT NULL, success INTEGER NOT NULL DEFAULT 0, reason TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`).run().catch(() => {});
+			await db.prepare('CREATE INDEX IF NOT EXISTS idx_email_attempts_ip_time ON email_send_attempts(ip, created_at)').run().catch(() => {});
+			await db.prepare('CREATE INDEX IF NOT EXISTS idx_email_attempts_email_time ON email_send_attempts(email, created_at)').run().catch(() => {});
 		};
 
 		const handleError = (error: any): Response => {
@@ -359,9 +366,35 @@ export default {
 				await ensureSchema();
 				const body = (await request.json()) as any;
 				const email = normalizeEmail(body.email);
+				const turnstileToken = String(
+					body.turnstile_token || ''
+				).trim();
 
 				if (!isValidEmailDomain(email)) {
 					return jsonResponse({ error: '请输入支持的主流邮箱地址，如 QQ、163、Foxmail 或 Gmail' }, 400);
+				}
+
+				const verificationGuard =
+					await guardVerificationEmail({
+						request,
+						env: {
+							TURNSTILE_SECRET_KEY: String(
+								(env as any)
+									.TURNSTILE_SECRET_KEY ||
+									''
+							)
+						},
+						db,
+						ip: clientIp || 'unknown',
+						email,
+						turnstileToken
+					});
+
+				if (!verificationGuard.ok) {
+					return jsonResponse(
+						{ error: verificationGuard.error },
+						verificationGuard.status
+					);
 				}
 
 				const existingUser = await db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').bind(email).first();
@@ -408,7 +441,26 @@ export default {
 
 				const resendData = (await resendResponse.json().catch(() => ({}))) as any;
 				if (!resendResponse.ok) {
-					return jsonResponse({ error: '邮件发送失败: ' + (resendData?.message || '请稍后重试') }, 502);
+					await recordVerificationEmailResult(
+						db,
+						clientIp || 'unknown',
+						email,
+						false,
+						`resend_failed:${String(
+							resendData?.message ||
+								resendResponse.status
+						).slice(0, 150)}`
+					);
+
+					return jsonResponse(
+						{
+							error:
+								'邮件发送失败: ' +
+								(resendData?.message ||
+									'请稍后重试')
+						},
+						502
+					);
 				}
 
 				await db.prepare('DELETE FROM email_verifications WHERE email = ?').bind(email).run().catch(() => {});
@@ -424,8 +476,19 @@ export default {
 			try {
 				const userCount = await db.prepare(`SELECT COUNT(*) AS count FROM users WHERE username != '已注销用户'`).first<{ count: number }>();
 				return jsonResponse({
-					turnstile_enabled: false,
-					turnstile_site_key: '',
+					turnstile_enabled: Boolean(
+						String(
+							(env as any)
+								.TURNSTILE_SECRET_KEY || ''
+						).trim() &&
+						String(
+							(env as any)
+								.TURNSTILE_SITE_KEY || ''
+						).trim()
+					),
+					turnstile_site_key: String(
+						(env as any).TURNSTILE_SITE_KEY || ''
+					).trim(),
 					user_count: Number(userCount?.count || 0),
 					jwt_secret_configured: true,
 					email_verification_enabled: true
