@@ -12,6 +12,7 @@ interface DBUser {
 	title?: string;
 	badges?: string;
 	reg_ip?: string;
+	last_ip?: string;
 	last_checkin_date?: string;
 	created_at?: string;
 }
@@ -232,6 +233,11 @@ export default {
 				.catch(() => {});
 
 			await db
+				.prepare('ALTER TABLE users ADD COLUMN last_ip TEXT')
+				.run()
+				.catch(() => {});
+
+			await db
 				.prepare(
 					'ALTER TABLE categories ADD COLUMN sort_order INTEGER DEFAULT 0'
 				)
@@ -380,6 +386,14 @@ export default {
 					throw new Error('Unauthorized');
 				}
 
+				// 智能捕捉：只要用户带 Token 访问，静默更新其最新真实活跃 IP！老用户瞬间现形！
+				if (clientIp) {
+					ctx.waitUntil(
+						db.prepare("UPDATE users SET last_ip = ?, reg_ip = COALESCE(reg_ip, ?) WHERE id = ?")
+							.bind(clientIp, clientIp, currentUser.id).run().catch(() => {})
+					);
+				}
+
 				return {
 					id: currentUser.id,
 					email: currentUser.email,
@@ -476,6 +490,7 @@ export default {
 			);
 		}
 
+		// 全站封禁 IP 防御层：命中黑名单当场 403 绝杀拒绝访问
 		try {
 			await ensureSchema();
 
@@ -491,7 +506,7 @@ export default {
 					return jsonResponse(
 						{
 							error:
-								'您的网络地址因异常请求已被限制访问'
+								'🚫 您的网络 IP 涉嫌违规或恶意攻击，已被自由论坛全站永久物理封锁！'
 						},
 						403
 					);
@@ -502,7 +517,7 @@ export default {
 		}
 
 		/*
-		 * 发送邮箱验证码（使用中英双语标准事务模板，优化投递率）
+		 * 发送邮箱验证码
 		 */
 		if (
 			url.pathname === '/api/auth/send-code' &&
@@ -518,7 +533,7 @@ export default {
 					return jsonResponse(
 						{
 							error:
-								'请输入支持的主流邮箱地址，如 QQ、163、Gmail 或 Outlook'
+								'请输入支持的主流邮箱地址，如 QQ、163、Foxmail 或 Gmail'
 						},
 						400
 					);
@@ -1138,7 +1153,8 @@ https://blog.t20.de5.net`;
 						    password = ?,
 						    avatar_url = NULL,
 						    role = 'deleted',
-						    reg_ip = NULL
+						    reg_ip = NULL,
+						    last_ip = NULL
 						WHERE id = ?
 					`)
 					.bind(
@@ -1157,6 +1173,9 @@ https://blog.t20.de5.net`;
 			}
 		}
 
+		/*
+		 * 注册：真实捕获注册 IP
+		 */
 		if (
 			url.pathname === '/api/register' &&
 			method === 'POST'
@@ -1325,10 +1344,10 @@ https://blog.t20.de5.net`;
 						.prepare(`
 							SELECT COUNT(*) AS count
 							FROM users
-							WHERE reg_ip = ?
+							WHERE (reg_ip = ? OR last_ip = ?)
 							  AND created_at > datetime('now', '-1 day')
 						`)
-						.bind(clientIp)
+						.bind(clientIp, clientIp)
 						.first<{ count: number }>();
 
 					if (
@@ -1360,15 +1379,17 @@ https://blog.t20.de5.net`;
 							points,
 							title,
 							badges,
-							reg_ip
+							reg_ip,
+							last_ip
 						)
-						VALUES (?, ?, ?, 'user', 1, 0, ?, '[]', ?)
+						VALUES (?, ?, ?, 'user', 1, 0, ?, '[]', ?, ?)
 					`)
 					.bind(
 						email,
 						username,
 						passwordHash,
 						'🌱 初来乍到',
+						clientIp || null,
 						clientIp || null
 					)
 					.run();
@@ -1418,6 +1439,9 @@ https://blog.t20.de5.net`;
 			}
 		}
 
+		/*
+		 * 登录：每次登录捕获最后活跃 IP
+		 */
 		if (
 			url.pathname === '/api/login' &&
 			method === 'POST'
@@ -1485,6 +1509,12 @@ https://blog.t20.de5.net`;
 						{ error: '密码不正确' },
 						401
 					);
+				}
+
+				// 智能捕获：登录瞬间，更新最后登录 IP，若是老用户则自动补齐 reg_ip
+				if (clientIp) {
+					await db.prepare("UPDATE users SET last_ip = ?, reg_ip = COALESCE(reg_ip, ?) WHERE id = ?")
+						.bind(clientIp, clientIp, user.id).run().catch(() => {});
 				}
 
 				const token = await new SignJWT({
@@ -2930,6 +2960,9 @@ https://blog.t20.de5.net`;
 			}
 		}
 
+		/*
+		 * 管理员用户管理列表（返回每个用户的真实 IP，优先展示最后活跃 IP）
+		 */
 		if (
 			url.pathname === '/api/admin/users' &&
 			method === 'GET'
@@ -2942,7 +2975,8 @@ https://blog.t20.de5.net`;
 					.prepare(`
 						SELECT id, email, username, role,
 						       verified, created_at, avatar_url,
-						       points, title, badges, reg_ip
+						       points, title, badges, 
+						       COALESCE(last_ip, reg_ip) AS reg_ip
 						FROM users
 						ORDER BY id DESC
 					`)
@@ -3037,6 +3071,7 @@ https://blog.t20.de5.net`;
 			}
 		}
 
+		// 站长手动物理封禁 IP
 		if (
 			url.pathname === '/api/admin/ban-ip' &&
 			method === 'POST'
@@ -3094,10 +3129,10 @@ https://blog.t20.de5.net`;
 					.prepare(`
 						UPDATE users
 						SET role = 'banned'
-						WHERE reg_ip = ?
+						WHERE (reg_ip = ? OR last_ip = ?)
 						  AND id != 1
 					`)
-					.bind(targetIp)
+					.bind(targetIp, targetIp)
 					.run();
 
 				return jsonResponse({
