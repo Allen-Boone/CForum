@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiFetch, getSecurityHeaders } from '@/lib/api';
 import { setToken, setUser } from '@/lib/auth';
-import { Mail, Lock, User, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { Mail, Lock, User, CheckCircle2, ShieldCheck, Info } from 'lucide-react';
 
 export function RegisterPage() {
 	const [email, setEmail] = React.useState('');
@@ -112,7 +112,7 @@ export function RegisterPage() {
 				<form onSubmit={handleSubmit} className="space-y-4 text-xs">
 					{/* 邮箱输入 + 获取验证码按钮 */}
 					<div className="space-y-1.5">
-						<Label className="text-gray-300">注册邮箱（支持 QQ、163、Gmail、Outlook 等）：</Label>
+						<Label className="text-gray-300">注册邮箱：</Label>
 						<div className="flex gap-2">
 							<div className="relative flex-1">
 								<Mail className="w-4 h-4 absolute left-3 top-2.5 text-gray-500" />
@@ -134,6 +134,14 @@ export function RegisterPage() {
 							>
 								{sendingCode ? '正在发送...' : countdown > 0 ? `${countdown}s 后重发` : '获取验证码'}
 							</Button>
+						</div>
+
+						{/* 贴心引导提示栏 */}
+						<div className="flex items-start gap-1.5 text-[11px] text-amber-400/90 bg-amber-500/10 border border-amber-500/20 p-2 rounded-md leading-relaxed mt-1">
+							<Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-amber-400" />
+							<span>
+								<strong>推荐使用 QQ、163、Foxmail 邮箱</strong>，验证码秒级送达；Gmail 首次接收可能会有少许延迟或进入垃圾箱。
+							</span>
 						</div>
 					</div>
 
