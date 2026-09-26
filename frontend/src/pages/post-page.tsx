@@ -57,6 +57,58 @@ export function PostPage() {
 		}
 	}, [post?.content]);
 
+	React.useEffect(() => {
+		if (!post) return;
+
+		document.title = `${post.title} - 自由论坛`;
+
+		const summary = String(post.content || '')
+			.replace(/[#>*_`\[\]()!]/g, ' ')
+			.replace(/\s+/g, ' ')
+			.trim()
+			.slice(0, 150);
+
+		let description = document.querySelector(
+			'meta[name="description"]'
+		) as HTMLMetaElement | null;
+
+		if (!description) {
+			description = document.createElement('meta');
+			description.name = 'description';
+			document.head.appendChild(description);
+		}
+		description.content = summary || '自由论坛公开主题内容';
+
+		let robots = document.querySelector(
+			'meta[name="robots"]'
+		) as HTMLMetaElement | null;
+
+		if (!robots) {
+			robots = document.createElement('meta');
+			robots.name = 'robots';
+			document.head.appendChild(robots);
+		}
+
+		robots.content =
+			Number(post.is_public || 0) === 1 &&
+			Number(post.allow_index || 0) === 1
+				? 'index,follow'
+				: 'noindex,nofollow';
+
+		let canonical = document.querySelector(
+			'link[rel="canonical"]'
+		) as HTMLLinkElement | null;
+
+		if (!canonical) {
+			canonical = document.createElement('link');
+			canonical.rel = 'canonical';
+			document.head.appendChild(canonical);
+		}
+
+		canonical.href =
+			`https://blog.t20.de5.net/post?id=${post.id}`;
+	}, [post]);
+
 	function insertMarkdownTag(prefix: string, suffix: string = '', defaultPlaceholder: string = '') {
 		const textarea = replyTextareaRef.current;
 		if (!textarea) return;
@@ -233,11 +285,22 @@ export function PostPage() {
 						dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(post.content) }}
 					/>
 
+					{!user && (
+						<div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3 text-xs text-blue-200">
+							您正在以游客只读模式浏览公开内容。登录后可以点赞、回复、发帖和私聊。
+							<div className="mt-2 flex gap-3">
+								<a href="/login" className="text-sky-300 font-bold hover:underline">登录</a>
+								<a href="/register" className="text-emerald-300 font-bold hover:underline">免费注册</a>
+							</div>
+						</div>
+					)}
+
 					<div className="flex items-center justify-between border-t border-[#30363d] pt-4">
 						<Button
 							size="sm"
 							variant="outline"
 							onClick={handleLike}
+							disabled={!user}
 							className={`text-xs h-8 border-[#30363d] ${liked ? 'text-rose-400 border-rose-500/50 bg-rose-500/10' : 'text-gray-300'}`}
 						>
 							<Heart className={`w-3.5 h-3.5 mr-1.5 ${liked ? 'fill-rose-500 text-rose-500' : ''}`} />

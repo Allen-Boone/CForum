@@ -21,6 +21,8 @@ export type Post = {
 	category_id: number | null;
 	category_name?: string | null;
 	is_pinned?: number;
+	is_public?: number;
+	allow_index?: number;
 	view_count?: number;
 	created_at: string;
 	author_name?: string;

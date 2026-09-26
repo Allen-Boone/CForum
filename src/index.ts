@@ -215,6 +215,9 @@ export default {
 		const ensureSchema = async () => {
 			await db.prepare('ALTER TABLE posts ADD COLUMN badge TEXT').run().catch(() => {});
 			await db.prepare('ALTER TABLE posts ADD COLUMN reward_points INTEGER DEFAULT 0').run().catch(() => {});
+			await db.prepare('ALTER TABLE posts ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0').run().catch(() => {});
+			await db.prepare('ALTER TABLE posts ADD COLUMN allow_index INTEGER NOT NULL DEFAULT 0').run().catch(() => {});
+			await db.prepare('CREATE INDEX IF NOT EXISTS idx_posts_public_index ON posts(is_public, allow_index, created_at)').run().catch(() => {});
 			await db.prepare("ALTER TABLE users ADD COLUMN badges TEXT DEFAULT '[]'").run().catch(() => {});
 			await db.prepare('ALTER TABLE users ADD COLUMN reg_ip TEXT').run().catch(() => {});
 			await db.prepare('ALTER TABLE users ADD COLUMN last_ip TEXT').run().catch(() => {});
@@ -293,6 +296,27 @@ export default {
 			return currentUser;
 		};
 
+
+		const optionalAuthenticate = async (
+			req: Request
+		): Promise<AuthUser | null> => {
+			const authHeader = req.headers.get('Authorization');
+
+			if (
+				!authHeader ||
+				!authHeader.startsWith('Bearer ')
+			) {
+				return null;
+			}
+
+			try {
+				return await authenticate(req);
+			} catch {
+				return null;
+			}
+		};
+
+
 		const directMessageResponse = await handleDirectMessageRoute(
 			request,
 			{ cforum_db: db },
@@ -307,7 +331,7 @@ export default {
 		if (url.pathname === '/sitemap.xml' && method === 'GET') {
 			try {
 				const posts = await db
-					.prepare(`SELECT id, created_at FROM posts ORDER BY COALESCE(is_pinned, 0) DESC, created_at DESC LIMIT 500`)
+					.prepare(`SELECT id, created_at FROM posts WHERE COALESCE(is_public, 0) = 1 AND COALESCE(allow_index, 0) = 1 ORDER BY COALESCE(is_pinned, 0) DESC, created_at DESC LIMIT 500`)
 					.all<{ id: number; created_at: string }>();
 
 				const postUrls = (posts.results || [])
@@ -876,9 +900,12 @@ export default {
 				const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') || 50)));
 				const offset = Math.max(0, Number(url.searchParams.get('offset') || 0));
 				const categoryId = url.searchParams.get('category_id');
+				const viewer = await optionalAuthenticate(request);
 
 				let query = `
 					SELECT p.id, p.author_id, p.title, p.content, p.category_id, COALESCE(p.is_pinned, 0) AS is_pinned,
+						COALESCE(p.is_public, 0) AS is_public,
+						COALESCE(p.allow_index, 0) AS allow_index,
 						p.badge, COALESCE(p.reward_points, 0) AS reward_points, COALESCE(p.views, 0) AS view_count, p.created_at,
 						u.username AS author_name, u.avatar_url AS author_avatar, u.role AS author_role, u.title AS author_title, u.badges AS author_badges,
 						c.name AS category_name,
@@ -890,9 +917,22 @@ export default {
 				`;
 
 				const params: any[] = [];
+				const conditions: string[] = [];
+
+				if (!viewer) {
+					conditions.push(
+						'COALESCE(p.is_public, 0) = 1'
+					);
+				}
+
 				if (categoryId) {
-					query += ' WHERE p.category_id = ?';
+					conditions.push('p.category_id = ?');
 					params.push(Number(categoryId));
+				}
+
+				if (conditions.length > 0) {
+					query +=
+						' WHERE ' + conditions.join(' AND ');
 				}
 
 				query += ` ORDER BY COALESCE(p.is_pinned, 0) DESC, p.created_at DESC LIMIT ? OFFSET ?`;
@@ -1013,6 +1053,8 @@ export default {
 
 				const post = await db.prepare(`
 					SELECT p.id, p.author_id, p.title, p.content, p.category_id, COALESCE(p.is_pinned, 0) AS is_pinned,
+						COALESCE(p.is_public, 0) AS is_public,
+						COALESCE(p.allow_index, 0) AS allow_index,
 						p.badge, COALESCE(p.reward_points, 0) AS reward_points, COALESCE(p.views, 0) AS view_count, p.created_at,
 						u.username AS author_name, u.avatar_url AS author_avatar, u.role AS author_role, u.title AS author_title, u.badges AS author_badges,
 						c.name AS category_name,
@@ -1025,6 +1067,23 @@ export default {
 				`).bind(postId).first();
 
 				if (!post) return jsonResponse({ error: '帖子不存在' }, 404);
+
+				const viewer =
+					await optionalAuthenticate(request);
+
+				if (
+					!viewer &&
+					Number((post as any).is_public || 0) !== 1
+				) {
+					return jsonResponse(
+						{
+							error:
+								'该内容仅对注册会员开放'
+						},
+						403
+					);
+				}
+
 				return jsonResponse(post);
 			} catch (error) {
 				return handleError(error);
@@ -1034,6 +1093,37 @@ export default {
 		if (/^\/api\/posts\/\d+\/comments$/.test(url.pathname) && method === 'GET') {
 			try {
 				const postId = Number(url.pathname.split('/')[3]);
+				const viewer =
+					await optionalAuthenticate(request);
+
+				if (!viewer) {
+					const visibility = await db
+						.prepare(
+							'SELECT is_public FROM posts WHERE id = ?'
+						)
+						.bind(postId)
+						.first<{ is_public: number }>();
+
+					if (!visibility) {
+						return jsonResponse(
+							{ error: '帖子不存在' },
+							404
+						);
+					}
+
+					if (
+						Number(visibility.is_public || 0) !== 1
+					) {
+						return jsonResponse(
+							{
+								error:
+									'该内容仅对注册会员开放'
+							},
+							403
+						);
+					}
+				}
+
 				const comments = await db.prepare(`
 					SELECT c.id, c.post_id, c.parent_id, c.author_id, c.content, c.created_at,
 						u.username, u.avatar_url, u.role, u.title, u.badges
@@ -1131,6 +1221,62 @@ export default {
 
 				await db.prepare(`UPDATE posts SET is_pinned = ? WHERE id = ?`).bind(weight, postId).run();
 				return jsonResponse({ success: true, weight });
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+
+		if (
+			/^\/api\/admin\/posts\/\d+\/visibility$/.test(
+				url.pathname
+			) &&
+			method === 'POST'
+		) {
+			try {
+				await requireAdmin(request);
+
+				const postId = Number(
+					url.pathname.split('/')[4]
+				);
+				const body = (await request.json()) as any;
+				const isPublic =
+					Number(body.is_public) === 1 ? 1 : 0;
+				const allowIndex =
+					isPublic === 1 &&
+					Number(body.allow_index) === 1
+						? 1
+						: 0;
+
+				const post = await db
+					.prepare(
+						'SELECT id FROM posts WHERE id = ?'
+					)
+					.bind(postId)
+					.first();
+
+				if (!post) {
+					return jsonResponse(
+						{ error: '帖子不存在' },
+						404
+					);
+				}
+
+				await db
+					.prepare(`
+						UPDATE posts
+						SET is_public = ?,
+						    allow_index = ?
+						WHERE id = ?
+					`)
+					.bind(isPublic, allowIndex, postId)
+					.run();
+
+				return jsonResponse({
+					success: true,
+					is_public: isPublic,
+					allow_index: allowIndex
+				});
 			} catch (error) {
 				return handleError(error);
 			}
