@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiFetch, getSecurityHeaders, type Category } from '@/lib/api';
 import { getToken, getUser } from '@/lib/auth';
-import { Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown, ArrowUpDown, Gavel, Hammer, Plus, Trash2, FolderKanban, ChevronLeft, ChevronRight, Ban, CheckSquare, Square } from 'lucide-react';
+import { Link2, ExternalLink, Coins, RefreshCw, Shield, Users, Medal, X, Check, Sparkles, Pencil, Crown, ArrowUpDown, Gavel, Hammer, Plus, Trash2, FolderKanban, ChevronLeft, ChevronRight, Ban, CheckSquare, Square } from 'lucide-react';
 
 interface SiteBadge {
 	id: number;
@@ -31,6 +31,11 @@ export function AdminPage() {
 	const [batchAssigning, setBatchAssigning] = React.useState(false);
 
 	const [categories, setCategories] = React.useState<Array<Category & { sort_order?: number }>>([]);
+	const [adminFriendLinks, setAdminFriendLinks] = React.useState<Array<{ id: number; name: string; url: string; description?: string }>>([]);
+	const [newLinkName, setNewLinkName] = React.useState('');
+	const [newLinkUrl, setNewLinkUrl] = React.useState('');
+	const [newLinkDesc, setNewLinkDesc] = React.useState('');
+	const [linkAdding, setLinkAdding] = React.useState(false);
 	const [newCatName, setNewCatName] = React.useState('');
 	const [manualIpInput, setManualIpInput] = React.useState('');
 	const [manualIpReason, setManualIpReason] = React.useState('');
@@ -96,7 +101,56 @@ export function AdminPage() {
 		}
 	}
 
-	const loadCategories = React.useCallback(async () => {
+		const loadAdminFriendLinks = React.useCallback(async () => {
+		try {
+			const res = await apiFetch<any[]>('/friend-links');
+			if (Array.isArray(res)) setAdminFriendLinks(res);
+		} catch (_) {}
+	}, []);
+
+	async function handleCreateFriendLink(e: React.FormEvent) {
+		e.preventDefault();
+		if (!newLinkName.trim() || !newLinkUrl.trim() || linkAdding) return;
+		setLinkAdding(true);
+		try {
+			const res = await apiFetch<{ success: boolean }>('/admin/friend-links', {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify({
+					name: newLinkName.trim(),
+					url: newLinkUrl.trim(),
+					description: newLinkDesc.trim()
+				})
+			});
+			if (res.success) {
+				alert('🎉 友链添加成功！全站首页已实时同步！');
+				setNewLinkName('');
+				setNewLinkUrl('');
+				setNewLinkDesc('');
+				loadAdminFriendLinks();
+			}
+		} catch (err: any) {
+			alert('添加友链失败: ' + err.message);
+		} finally {
+			setLinkAdding(false);
+		}
+	}
+
+	async function handleDeleteFriendLink(id: number, name: string) {
+		if (!confirm(`确定要从首页移除友链【${name}】吗？`)) return;
+		try {
+			await apiFetch(`/admin/friend-links/${id}`, {
+				method: 'DELETE',
+				headers: getSecurityHeaders('DELETE')
+			});
+			alert('友链已成功移除！');
+			loadAdminFriendLinks();
+		} catch (err: any) {
+			alert('删除失败: ' + err.message);
+		}
+	}
+
+const loadCategories = React.useCallback(async () => {
 		try {
 			const cats = await apiFetch<any[]>('/categories');
 			if (cats) setCategories(cats);
@@ -303,6 +357,7 @@ async function handleBanIp(ip?: string, username?: string) {
 				})
 			]);
 			loadCategories();
+		loadAdminFriendLinks();
 		} catch (err: any) {
 			alert('调整排序失败: ' + err.message);
 		}
@@ -890,6 +945,82 @@ async function handleBanIp(ip?: string, username?: string) {
 									</div>
 								</div>
 							))}
+						</div>
+					</CardContent>
+				</Card>
+
+								{/* 友情链接与外部合作伙伴管理 */}
+				<Card className="bg-[#161b22] border-[#30363d]">
+					<CardHeader className="py-3 px-4 border-b border-[#30363d] flex flex-row items-center justify-between">
+						<CardTitle className="text-sm text-white flex items-center gap-1.5 font-bold">
+							<Link2 className="w-4 h-4 text-cyan-400" />
+							友情链接与外部合作伙伴管理（首页侧边栏黄金位展示）
+						</CardTitle>
+					</CardHeader>
+					<CardContent className="p-4 space-y-4">
+						<form onSubmit={handleCreateFriendLink} className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+							<div className="sm:col-span-3">
+								<input
+									type="text"
+									placeholder="网站名称（如：V2EX、极客随笔）"
+									value={newLinkName}
+									onChange={e => setNewLinkName(e.target.value)}
+									className="w-full bg-[#0d1117] border border-[#30363d] focus:border-cyan-500 rounded px-3 py-1.5 text-xs text-white outline-none"
+									required
+								/>
+							</div>
+							<div className="sm:col-span-5">
+								<input
+									type="url"
+									placeholder="网址（必须以 https:// 或 http:// 开头）"
+									value={newLinkUrl}
+									onChange={e => setNewLinkUrl(e.target.value)}
+									className="w-full bg-[#0d1117] border border-[#30363d] focus:border-cyan-500 rounded px-3 py-1.5 text-xs text-white outline-none"
+									required
+								/>
+							</div>
+							<div className="sm:col-span-3">
+								<input
+									type="text"
+									placeholder="网站一句话简介（可选）"
+									value={newLinkDesc}
+									onChange={e => setNewLinkDesc(e.target.value)}
+									className="w-full bg-[#0d1117] border border-[#30363d] focus:border-cyan-500 rounded px-3 py-1.5 text-xs text-white outline-none"
+								/>
+							</div>
+							<div className="sm:col-span-1">
+								<Button type="submit" size="sm" disabled={linkAdding} className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs h-8 px-2 shadow">
+									<Plus className="w-3.5 h-3.5 mr-0.5" /> 添加
+								</Button>
+							</div>
+						</form>
+
+						<div className="border border-[#21262d] rounded-lg divide-y divide-[#21262d] bg-[#0d1117] max-h-56 overflow-y-auto">
+							{adminFriendLinks.length === 0 ? (
+								<div className="p-4 text-center text-xs text-gray-500">
+									🌟 暂无友情链接，请在上方添加你的第一个互推伙伴！
+								</div>
+							) : (
+								adminFriendLinks.map((item) => (
+									<div key={item.id} className="p-2.5 px-3 flex items-center justify-between gap-3 text-xs hover:bg-[#161b22] transition-colors">
+										<div className="flex items-center gap-2.5 min-w-0">
+											<span className="font-bold text-cyan-400 whitespace-nowrap">{item.name}</span>
+											<a href={item.url} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white truncate font-mono text-[11px] flex items-center gap-1">
+												{item.url} <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+											</a>
+											{item.description && <span className="text-gray-500 text-[11px] truncate hidden sm:inline">({item.description})</span>}
+										</div>
+										<button
+											type="button"
+											onClick={() => handleDeleteFriendLink(item.id, item.name)}
+											className="text-gray-500 hover:text-red-400 p-1 flex-shrink-0"
+											title="移除友链"
+										>
+											<Trash2 className="w-3.5 h-3.5" />
+										</button>
+									</div>
+								))
+							)}
 						</div>
 					</CardContent>
 				</Card>

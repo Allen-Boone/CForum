@@ -220,6 +220,14 @@ export default {
 			await db.prepare('ALTER TABLE posts ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0').run().catch(() => {});
 			await db.prepare('ALTER TABLE posts ADD COLUMN allow_index INTEGER NOT NULL DEFAULT 0').run().catch(() => {});
 			await db.prepare('CREATE INDEX IF NOT EXISTS idx_posts_public_index ON posts(is_public, allow_index, created_at)').run().catch(() => {});
+			await db.prepare(`CREATE TABLE IF NOT EXISTS friend_links (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				name TEXT NOT NULL,
+				url TEXT NOT NULL,
+				description TEXT,
+				sort_order INTEGER DEFAULT 0,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			)`).run().catch(() => {});
 			await db.prepare("ALTER TABLE users ADD COLUMN badges TEXT DEFAULT '[]'").run().catch(() => {});
 			await db.prepare('ALTER TABLE users ADD COLUMN reg_ip TEXT').run().catch(() => {});
 			await db.prepare('ALTER TABLE users ADD COLUMN last_ip TEXT').run().catch(() => {});
@@ -382,6 +390,53 @@ export default {
 			}
 		} catch (error) {
 			return handleError(error);
+		}
+
+
+		/*
+		 * 友情链接 API
+		 */
+		if (url.pathname === '/api/friend-links' && method === 'GET') {
+			try {
+				await ensureSchema();
+				const links = await db.prepare('SELECT id, name, url, description, sort_order FROM friend_links ORDER BY sort_order ASC, id ASC').all();
+				return jsonResponse(links.results || []);
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (url.pathname === '/api/admin/friend-links' && method === 'POST') {
+			try {
+				await requireAdmin(request);
+				await ensureSchema();
+				const body = (await request.json()) as any;
+				const name = String(body.name || '').trim();
+				let linkUrl = String(body.url || '').trim();
+				const description = String(body.description || '').trim().slice(0, 100);
+
+				if (!name || name.length > 30) return jsonResponse({ error: '友链名称不能为空且须在30字以内' }, 400);
+				if (!linkUrl || !linkUrl.startsWith('http')) return jsonResponse({ error: '请输入以 http:// 或 https:// 开头的合法网址' }, 400);
+
+				const maxOrder = await db.prepare('SELECT MAX(sort_order) AS max_order FROM friend_links').first<{ max_order: number }>();
+				const nextOrder = Number(maxOrder?.max_order || 0) + 1;
+
+				const res = await db.prepare('INSERT INTO friend_links (name, url, description, sort_order) VALUES (?, ?, ?, ?)').bind(name, linkUrl, description, nextOrder).run();
+				return jsonResponse({ success: true, id: res.meta.last_row_id, name, url: linkUrl, description, sort_order: nextOrder });
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (/^\/api\/admin\/friend-links\/\d+$/.test(url.pathname) && method === 'DELETE') {
+			try {
+				await requireAdmin(request);
+				const id = Number(url.pathname.split('/')[4]);
+				await db.prepare('DELETE FROM friend_links WHERE id = ?').bind(id).run();
+				return jsonResponse({ success: true, id });
+			} catch (error) {
+				return handleError(error);
+			}
 		}
 
 		/*

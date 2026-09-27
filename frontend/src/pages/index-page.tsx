@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Gift, Flame, Zap, FolderInput, Gavel, X, CheckCircle2, ArrowUp, Bold, Italic, Heading, Quote, Code, FileCode, List, Link as LinkIcon, Image as ImageIcon, Smile } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Gift, Flame, Zap, FolderInput, Gavel, X, CheckCircle2, ArrowUp, Bold, Italic, Heading, Quote, Code, FileCode, List, Link as LinkIcon, Image as ImageIcon, Smile, ExternalLink, Link2 } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -168,6 +168,7 @@ export function IndexPage() {
 
 	// 动态实时板块列表（从后端完整读取排序）
 	const [categories, setCategories] = React.useState<Category[]>([]);
+	const [friendLinks, setFriendLinks] = React.useState<Array<{ id: number; name: string; url: string; description?: string }>>([]);
 	const [selectedCategory, setSelectedCategory] = React.useState<string>('all');
 	const [posts, setPosts] = React.useState<Array<Post & { badge?: string | null; reward_points?: number; author_badges?: string; is_pinned?: number; is_public?: number; allow_index?: number }>>([]);
 	const [loading, setLoading] = React.useState<boolean>(true);
@@ -225,7 +226,14 @@ export function IndexPage() {
 		} catch (_) {}
 	}, []);
 
-	const loadCategories = React.useCallback(async () => {
+		const loadFriendLinks = React.useCallback(async () => {
+		try {
+			const res = await apiFetch<any[]>('/friend-links');
+			if (Array.isArray(res)) setFriendLinks(res);
+		} catch (_) {}
+	}, []);
+
+const loadCategories = React.useCallback(async () => {
 		try {
 			const cats = await apiFetch<Category[]>('/categories');
 			if (cats && cats.length > 0) {
@@ -250,6 +258,7 @@ export function IndexPage() {
 	React.useEffect(() => {
 		loadStats();
 		loadCategories();
+		loadFriendLinks();
 
 		if (token) {
 			(async () => {
@@ -1291,6 +1300,39 @@ export function IndexPage() {
 							<a href="/messages" className="hover:text-cyan-300 text-cyan-400 font-medium">• 💬 我的私信</a>
 							<span onClick={handleDeleteOwnAccount} className="hover:text-rose-400 cursor-pointer text-rose-400/90 font-medium">• 🚪 账号注销(自由)</span>
 						</div>
+					</div>
+
+					{/* 黄金位：友情链接专属卡片 */}
+					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3.5 space-y-2.5 shadow-sm">
+						<div className="flex items-center justify-between border-b border-[#21262d] pb-2">
+							<span className="font-bold text-gray-200 text-xs flex items-center gap-1.5">
+								<Link2 className="w-3.5 h-3.5 text-cyan-400" />
+								友情链接
+							</span>
+							<span className="text-[11px] text-gray-500">优秀极客站点</span>
+						</div>
+
+						{friendLinks.length === 0 ? (
+							<div className="text-center py-2 text-[11px] text-gray-500">
+								🌟 欢迎各大优质独立博客与站长交换友链！
+							</div>
+						) : (
+							<div className="flex flex-wrap gap-2 pt-0.5">
+								{friendLinks.map((link) => (
+									<a
+										key={link.id}
+										href={link.url}
+										target="_blank"
+										rel="noopener noreferrer"
+										title={link.description || link.name}
+										className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#0d1117] hover:bg-[#21262d] text-cyan-400 hover:text-cyan-300 border border-[#30363d] hover:border-cyan-500/50 text-xs transition-all group"
+									>
+										<span>{link.name}</span>
+										<ExternalLink className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+									</a>
+								))}
+							</div>
+						)}
 					</div>
 
 					<div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 space-y-3">
