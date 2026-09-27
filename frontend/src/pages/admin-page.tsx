@@ -762,7 +762,8 @@ async function handleBanIp(ip?: string, username?: string) {
 
 							{bannedIpList.length === 0 ? (
 								<div className="bg-[#0d1117] border border-[#21262d] rounded-lg p-3 text-center text-xs text-gray-500">
-									🕊️ 当前防火墙黑名单空空如也，暂无被封禁的 IP
+									🕊️ 182.255.32.63 | 6 次请求尝试验证码 | 2026-09-27 02:28:19
+支持一键特赦解封误伤 IP
 								</div>
 							) : (
 								<div className="max-h-48 overflow-y-auto divide-y divide-[#21262d] border border-[#30363d] rounded-lg bg-[#0d1117]">
