@@ -95,7 +95,7 @@ export function AdminPage() {
 			]);
 			setStats(s);
 			setUsers(u || []);
-			await Promise.all([loadBadges(), loadCategories()]);
+			await Promise.all([loadBadges(), loadCategories(), loadBannedIps()]);
 		} catch (e: any) {
 			setError(e.message || '加载后台数据失败');
 		} finally {
@@ -105,7 +105,8 @@ export function AdminPage() {
 
 	React.useEffect(() => {
 		refresh();
-	}, [refresh]);
+		loadBannedIps();
+	}, [refresh, loadBannedIps]);
 
 	// 核心亮点：全选 / 全不选切换（站长本人物理级排除）
 	function handleToggleSelectAll() {
@@ -757,7 +758,18 @@ async function handleBanIp(ip?: string, username?: string) {
 								<span className="text-xs font-bold text-red-300 flex items-center gap-1.5">
 									🛡️ 当前在册全站封杀黑名单（共 {bannedIpList.length} 个恶意 IP）
 								</span>
-								<span className="text-[11px] text-gray-500">支持一键特赦解封误伤 IP</span>
+								<div className="flex items-center gap-2">
+									<Button
+										type="button"
+										size="sm"
+										variant="outline"
+										onClick={loadBannedIps}
+										className="border-red-500/50 text-red-300 hover:bg-red-500/20 text-xs h-6 px-2.5 font-bold"
+									>
+										🔄 刷新黑名单
+									</Button>
+									<span className="text-[11px] text-gray-500">支持一键特赦解封误伤 IP</span>
+								</div>
 							</div>
 
 							{bannedIpList.length === 0 ? (
