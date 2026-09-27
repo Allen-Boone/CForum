@@ -35,6 +35,7 @@ export function AdminPage() {
 	const [manualIpInput, setManualIpInput] = React.useState('');
 	const [manualIpReason, setManualIpReason] = React.useState('');
 	const [manualIpLoading, setManualIpLoading] = React.useState(false);
+	const [bannedIpList, setBannedIpList] = React.useState<Array<{ id: number; ip: string; reason: string; created_at: string }>>([]);
 
 	const [badgeList, setBadgeList] = React.useState<SiteBadge[]>([]);
 	const [forgeModalOpen, setForgeModalOpen] = React.useState(false);
@@ -136,6 +137,7 @@ export function AdminPage() {
 			});
 			if (res.success) {
 				alert(`🎉 批量删除成功！已成功抹杀 ${res.count} 个违规小号！`);
+				loadBannedIps();
 				refresh();
 			}
 		} catch (err: any) {
@@ -199,7 +201,30 @@ export function AdminPage() {
 		}
 	}
 
-		async function handleManualBanIp(e: React.FormEvent) {
+			const loadBannedIps = React.useCallback(async () => {
+		try {
+			const list = await apiFetch<any[]>('/admin/banned-ips', {
+				headers: getSecurityHeaders('GET')
+			});
+			if (list) setBannedIpList(list);
+		} catch (_) {}
+	}, []);
+
+	async function handleUnbanIp(id: number, ip: string) {
+		if (!confirm(`确定要解封 IP【${ip}】吗？\n解封后该网络将重新恢复访问论坛权限。`)) return;
+		try {
+			await apiFetch(`/admin/banned-ips/${id}`, {
+				method: 'DELETE',
+				headers: getSecurityHeaders('DELETE')
+			});
+			alert(`✅ IP【${ip}】已成功解封！`);
+			loadBannedIps();
+		} catch (err: any) {
+			alert('解封失败: ' + err.message);
+		}
+	}
+
+async function handleManualBanIp(e: React.FormEvent) {
 		e.preventDefault();
 		const ip = manualIpInput.trim();
 		if (!ip) return alert('请输入要封禁的 IP 地址！');
@@ -726,6 +751,50 @@ async function handleBanIp(ip?: string, username?: string) {
 						<p className="text-[11px] text-gray-500 mt-2">
 							💡 <strong>原理解释：</strong>被封禁的 IP 将直接写入底层防火墙黑名单。该 IP 发起的任何页面访问、接口嗅探、验证码请求都会被系统秒级拦截，直接返回 403 禁入！
 						</p>
+
+						<div className="mt-4 pt-3 border-t border-[#30363d]/80">
+							<div className="flex items-center justify-between mb-2">
+								<span className="text-xs font-bold text-red-300 flex items-center gap-1.5">
+									🛡️ 当前在册全站封杀黑名单（共 {bannedIpList.length} 个恶意 IP）
+								</span>
+								<span className="text-[11px] text-gray-500">支持一键特赦解封误伤 IP</span>
+							</div>
+
+							{bannedIpList.length === 0 ? (
+								<div className="bg-[#0d1117] border border-[#21262d] rounded-lg p-3 text-center text-xs text-gray-500">
+									🕊️ 当前防火墙黑名单空空如也，暂无被封禁的 IP
+								</div>
+							) : (
+								<div className="max-h-48 overflow-y-auto divide-y divide-[#21262d] border border-[#30363d] rounded-lg bg-[#0d1117]">
+									{bannedIpList.map((item) => (
+										<div key={item.id} className="p-2.5 px-3 text-xs flex items-center justify-between gap-3 hover:bg-[#161b22] transition-colors">
+											<div className="flex items-center gap-3 min-w-0">
+												<span className="font-mono font-bold text-red-400 bg-red-950/60 border border-red-800/60 px-2 py-0.5 rounded text-[11px]">
+													{item.ip}
+												</span>
+												<span className="text-gray-300 truncate text-[11px]" title={item.reason}>
+													理由：{item.reason}
+												</span>
+											</div>
+											<div className="flex items-center gap-3 flex-shrink-0">
+												<span className="text-[10px] text-gray-500 hidden sm:inline">
+													{item.created_at?.slice(0, 16)}
+												</span>
+												<Button
+													type="button"
+													size="sm"
+													variant="outline"
+													onClick={() => handleUnbanIp(item.id, item.ip)}
+													className="border-emerald-600/60 text-emerald-400 hover:bg-emerald-600/20 text-xs h-6 px-2"
+												>
+													特赦解封
+												</Button>
+											</div>
+										</div>
+									))}
+								</div>
+							)}
+						</div>
 					</CardContent>
 				</Card>
 
