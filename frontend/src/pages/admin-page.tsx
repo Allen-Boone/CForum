@@ -1466,3 +1466,12 @@ async function handleBanIp(ip?: string, username?: string) {
 		</PageShell>
 	);
 }
+
+							<Button
+								onClick={loadBannedIps}
+								variant="outline"
+								size="sm"
+								className="text-xs border-cyan-500 text-cyan-400 hover:bg-cyan-500/10"
+							>
+								🔄 强制刷新黑名单
+							</Button>
