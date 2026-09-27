@@ -32,6 +32,9 @@ export function AdminPage() {
 
 	const [categories, setCategories] = React.useState<Array<Category & { sort_order?: number }>>([]);
 	const [newCatName, setNewCatName] = React.useState('');
+	const [manualIpInput, setManualIpInput] = React.useState('');
+	const [manualIpReason, setManualIpReason] = React.useState('');
+	const [manualIpLoading, setManualIpLoading] = React.useState(false);
 
 	const [badgeList, setBadgeList] = React.useState<SiteBadge[]>([]);
 	const [forgeModalOpen, setForgeModalOpen] = React.useState(false);
@@ -196,7 +199,39 @@ export function AdminPage() {
 		}
 	}
 
-	async function handleBanIp(ip?: string, username?: string) {
+		async function handleManualBanIp(e: React.FormEvent) {
+		e.preventDefault();
+		const ip = manualIpInput.trim();
+		if (!ip) return alert('请输入要封禁的 IP 地址！');
+
+		// 校验基础 IP 格式
+		const isIp = /^([0-9]{1,3}\.){3}[0-9]{1,3}$/.test(ip) || ip.includes(':');
+		if (!isIp) return alert('请输入合规的 IP 地址格式（如 182.255.32.63）！');
+
+		const reason = manualIpReason.trim() || '站长手动封禁恶意嗅探/轰炸 IP';
+		if (!confirm(`【站长物理级封禁 IP】\n确定要将恶意 IP【${ip}】永久全站拉黑吗？\n\n封禁理由：${reason}\n封禁后，该 IP 的所有设备将被彻底拒绝访问自由论坛！`)) return;
+
+		setManualIpLoading(true);
+		try {
+			const res = await apiFetch<{ success: boolean; ip: string }>('/admin/ban-ip', {
+				method: 'POST',
+				headers: getSecurityHeaders('POST'),
+				body: JSON.stringify({ ip, reason })
+			});
+			if (res.success) {
+				alert(`🚫 封禁生效！恶意 IP【${res.ip}】已被全站物理封死！`);
+				setManualIpInput('');
+				setManualIpReason('');
+				refresh();
+			}
+		} catch (err: any) {
+			alert('封禁失败: ' + err.message);
+		} finally {
+			setManualIpLoading(false);
+		}
+	}
+
+async function handleBanIp(ip?: string, username?: string) {
 		if (!ip || ip === '127.0.0.1') return alert('暂无该用户的有效外部真实IP！');
 		if (!confirm(`【站长物理级封禁 IP】\n确定要将 IP【${ip}】（用户：${username}）永久拉黑吗？\n\n封禁后，该 IP 下的所有设备将被 Cloudflare 彻底拒绝访问自由论坛，名下所有小号将同步关入小黑屋！`)) return;
 
@@ -648,6 +683,51 @@ export function AdminPage() {
 						</CardContent>
 					</Card>
 				</div>
+
+								{/* 站长安全雷达：手动输入恶意 IP 立即全网物理封死 */}
+				<Card className="bg-[#161b22] border-red-500/40 shadow-lg shadow-red-950/20">
+					<CardHeader className="py-3 px-4 border-b border-[#30363d] flex flex-row items-center justify-between">
+						<CardTitle className="text-sm text-red-400 flex items-center gap-2 font-bold">
+							<Ban className="w-4 h-4 text-red-500" />
+							恶意 IP 手动猎杀与全站物理封锁中心（精准打击脚本轰炸）
+						</CardTitle>
+					</CardHeader>
+					<CardContent className="p-4">
+						<form onSubmit={handleManualBanIp} className="flex flex-wrap items-center gap-3">
+							<div className="flex-1 min-w-[200px]">
+								<input
+									type="text"
+									placeholder="输入要封死的恶意 IP（如：182.255.32.63）"
+									value={manualIpInput}
+									onChange={e => setManualIpInput(e.target.value)}
+									className="w-full bg-[#0d1117] border border-red-900/60 focus:border-red-500 rounded px-3 py-1.5 text-xs text-white font-mono outline-none"
+									required
+								/>
+							</div>
+							<div className="flex-1 min-w-[200px]">
+								<input
+									type="text"
+									placeholder="封禁原因（默认：站长手动封禁恶意脚本）"
+									value={manualIpReason}
+									onChange={e => setManualIpReason(e.target.value)}
+									className="w-full bg-[#0d1117] border border-[#30363d] focus:border-red-500 rounded px-3 py-1.5 text-xs text-white outline-none"
+								/>
+							</div>
+							<Button
+								type="submit"
+								size="sm"
+								disabled={manualIpLoading}
+								className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs h-8 px-5 shadow-md flex-shrink-0"
+							>
+								<Ban className="w-3.5 h-3.5 mr-1" />
+								{manualIpLoading ? '封禁中...' : '立即物理封死该 IP'}
+							</Button>
+						</form>
+						<p className="text-[11px] text-gray-500 mt-2">
+							💡 <strong>原理解释：</strong>被封禁的 IP 将直接写入底层防火墙黑名单。该 IP 发起的任何页面访问、接口嗅探、验证码请求都会被系统秒级拦截，直接返回 403 禁入！
+						</p>
+					</CardContent>
+				</Card>
 
 				{/* 社区板块分类与自由排序管理 */}
 				<Card className="bg-[#161b22] border-[#30363d]">
