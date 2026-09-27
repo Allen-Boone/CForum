@@ -73,6 +73,29 @@ export function AdminPage() {
 		} catch (_) {}
 	}, [batchBadge]);
 
+	const loadBannedIps = React.useCallback(async () => {
+		try {
+			const list = await apiFetch<any[]>('/admin/banned-ips', {
+				headers: getSecurityHeaders('GET')
+			});
+			if (Array.isArray(list)) setBannedIpList(list);
+		} catch (_) {}
+	}, []);
+
+	async function handleUnbanIp(id: number, ip: string) {
+		if (!confirm(`确定要解封 IP【${ip}】吗？\n解封后该网络将重新恢复访问论坛权限。`)) return;
+		try {
+			await apiFetch(`/admin/banned-ips/${id}`, {
+				method: 'DELETE',
+				headers: getSecurityHeaders('DELETE')
+			});
+			alert(`✅ IP【${ip}】已成功解封！`);
+			loadBannedIps();
+		} catch (err: any) {
+			alert('解封失败: ' + err.message);
+		}
+	}
+
 	const loadCategories = React.useCallback(async () => {
 		try {
 			const cats = await apiFetch<any[]>('/categories');
@@ -199,29 +222,6 @@ export function AdminPage() {
 			}
 		} catch (err: any) {
 			alert('批量关押失败: ' + err.message);
-		}
-	}
-
-			const loadBannedIps = React.useCallback(async () => {
-		try {
-			const list = await apiFetch<any[]>('/admin/banned-ips', {
-				headers: getSecurityHeaders('GET')
-			});
-			if (list) setBannedIpList(list);
-		} catch (_) {}
-	}, []);
-
-	async function handleUnbanIp(id: number, ip: string) {
-		if (!confirm(`确定要解封 IP【${ip}】吗？\n解封后该网络将重新恢复访问论坛权限。`)) return;
-		try {
-			await apiFetch(`/admin/banned-ips/${id}`, {
-				method: 'DELETE',
-				headers: getSecurityHeaders('DELETE')
-			});
-			alert(`✅ IP【${ip}】已成功解封！`);
-			loadBannedIps();
-		} catch (err: any) {
-			alert('解封失败: ' + err.message);
 		}
 	}
 
