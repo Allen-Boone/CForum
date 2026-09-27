@@ -108,6 +108,10 @@ export function AdminPage() {
 		} catch (_) {}
 	}, []);
 
+	React.useEffect(() => {
+		if (token) loadAdminFriendLinks();
+	}, [token, loadAdminFriendLinks]);
+
 	async function handleCreateFriendLink(e: React.FormEvent) {
 		e.preventDefault();
 		if (!newLinkName.trim() || !newLinkUrl.trim() || linkAdding) return;
