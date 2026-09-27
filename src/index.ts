@@ -1430,7 +1430,29 @@ export default {
 			}
 		}
 
-		if (url.pathname === '/api/admin/ban-ip' && method === 'POST') {
+				if (url.pathname === '/api/admin/banned-ips' && method === 'GET') {
+			try {
+				await requireAdmin(request);
+				await ensureSchema();
+				const result = await db.prepare('SELECT id, ip, reason, created_at FROM banned_ips ORDER BY id DESC LIMIT 100').all();
+				return jsonResponse(result.results || []);
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+		if (/^\/api\/admin\/banned-ips\/\d+$/.test(url.pathname) && method === 'DELETE') {
+			try {
+				await requireAdmin(request);
+				const id = Number(url.pathname.split('/')[4]);
+				await db.prepare('DELETE FROM banned_ips WHERE id = ?').bind(id).run();
+				return jsonResponse({ success: true, id });
+			} catch (error) {
+				return handleError(error);
+			}
+		}
+
+if (url.pathname === '/api/admin/ban-ip' && method === 'POST') {
 			try {
 				await requireAdmin(request);
 				await ensureSchema();
