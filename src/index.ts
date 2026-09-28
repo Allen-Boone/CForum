@@ -451,7 +451,25 @@ export default {
 					body.turnstile_token || ''
 				).trim();
 
-				if (!isValidEmailDomain(email)) {
+				const temporarilyBlockedEmailDomains = new Set([
+				'gmail.com',
+				'googlemail.com'
+			]);
+
+			const emailDomain =
+				email.split('@')[1]?.toLowerCase() || '';
+
+			if (temporarilyBlockedEmailDomains.has(emailDomain)) {
+				return jsonResponse(
+					{
+						error:
+							'目前 Gmail 邮箱验证码通道正在维护，请暂时使用 QQ 邮箱、163 邮箱、Foxmail、Outlook 或 Hotmail 注册。'
+					},
+					503
+				);
+			}
+
+			if (!isValidEmailDomain(email)) {
 					return jsonResponse({ error: '请输入支持的主流邮箱地址，如 QQ、163、Foxmail 或 Gmail' }, 400);
 				}
 
