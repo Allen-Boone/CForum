@@ -544,8 +544,39 @@ export default {
 					);
 				}
 
+			const resendMessageId = String(resendData?.id || '').trim();
+
+			if (!resendMessageId) {
+				await recordVerificationEmailResult(
+					db,
+					clientIp || 'unknown',
+					email,
+					false,
+					'resend_missing_message_id'
+				);
+
+				return jsonResponse(
+					{ error: '邮件服务未返回可追踪的邮件编号，请稍后重试' },
+					502
+				);
+			}
+
+
+
 				await db.prepare('DELETE FROM email_verifications WHERE email = ?').bind(email).run().catch(() => {});
 				await db.prepare(`INSERT INTO email_verifications (email, code, expires_at) VALUES (?, ?, ?)`).bind(email, storedCode, expiresAt).run();
+
+			try {
+			await recordVerificationEmailResult(
+				db,
+				clientIp || 'unknown',
+				email,
+				true,
+				`resend_sent:${resendMessageId}`
+			);
+			} catch {
+				console.error('Email send audit write failed');
+			}
 
 				return jsonResponse({ success: true, message: '验证码已发送至您的邮箱，请前往查收！' });
 			} catch (error) {
