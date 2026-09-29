@@ -48,7 +48,7 @@ export function AdminPage() {
 
 	const [stats, setStats] = React.useState<{ users: number; posts: number; comments: number } | null>(null);
 	const [users, setUsers] = React.useState<
-		Array<{ id: number; email: string; username: string; role: string; verified: number; created_at: string; points?: number; title?: string; badges?: string; reg_ip?: string }>
+		Array<{ id: number; email: string; username: string; role: string; verified: number; created_at: string; points?: number; title?: string; badges?: string; reg_ip?: string | null; last_ip?: string | null }>
 	>([]);
 
 	// 核心亮点：批量勾选用户 ID 列表
@@ -1134,7 +1134,8 @@ async function handleBanIp(ip?: string, username?: string) {
 									<th className="py-2.5 px-4 max-w-[150px]">用户名</th>
 									<th className="py-2.5 px-4 max-w-[180px]">邮箱</th>
 									<th className="py-2.5 px-4 w-44 whitespace-nowrap">注册时间（北京时间）</th>
-																			<th className="py-2.5 px-4 w-28">注册 IP 溯源</th>
+																			<th className="py-2.5 px-4 w-28">注册 IP</th>
+															<th className="py-2.5 px-4 w-28">最近访问 IP</th>
 									<th className="py-2.5 px-4">称号与勋章</th>
 									<th className="py-2.5 px-4 w-20">当前积分</th>
 									<th className="py-2.5 px-4 w-28">角色身份</th>
@@ -1187,12 +1188,11 @@ async function handleBanIp(ip?: string, username?: string) {
 																								{formatBeijingTime(u.created_at)}
 																							</td>
 																							<td className="py-3 px-4 font-mono text-[11px] text-cyan-400 whitespace-nowrap">
-												{u.reg_ip ? (
-													<span title="该用户的真实客户端IP">{u.reg_ip}</span>
-												) : (
-													<span className="text-gray-600">历史用户</span>
-												)}
-											</td>
+															{u.reg_ip || <span className="text-gray-600">未记录</span>}
+														</td>
+														<td className="py-3 px-4 font-mono text-[11px] text-sky-400 whitespace-nowrap">
+															{u.last_ip || <span className="text-gray-600">未记录</span>}
+														</td>
 											<td className="py-3 px-4 space-y-1.5">
 												<div>
 													<span className="bg-blue-950/60 text-blue-300 border border-blue-800/60 px-1.5 py-0.5 rounded text-[11px] whitespace-nowrap">
@@ -1224,11 +1224,11 @@ async function handleBanIp(ip?: string, username?: string) {
 											</td>
 											<td className="py-3 px-4 text-right whitespace-nowrap">
 												<div className="flex items-center justify-end gap-1 flex-nowrap">
-													{u.id !== 1 && u.reg_ip && (
+													{u.id !== 1 && (u.last_ip || u.reg_ip) && (
 														<Button
 															size="sm"
 															variant="outline"
-															onClick={() => handleBanIp(u.reg_ip, u.username)}
+															onClick={() => handleBanIp(u.last_ip || u.reg_ip, u.username)}
 															className="border-red-600/60 text-red-400 hover:bg-red-600/20 text-xs h-6 px-1.5"
 															title="全站物理封死该用户的网络IP，拒绝其所有设备访问"
 														>

@@ -1498,7 +1498,7 @@ export default {
 				await requireAdmin(request);
 				await ensureSchema();
 
-				const result = await db.prepare(`SELECT id, email, username, role, verified, created_at, avatar_url, points, title, badges, COALESCE(last_ip, reg_ip) AS reg_ip FROM users ORDER BY id DESC`).all();
+				const result = await db.prepare(`SELECT id, email, username, role, verified, created_at, avatar_url, points, title, badges, reg_ip, last_ip FROM users ORDER BY id DESC`).all();
 				return jsonResponse(result.results || []);
 			} catch (error) {
 				return handleError(error);
