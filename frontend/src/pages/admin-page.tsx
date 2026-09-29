@@ -76,6 +76,34 @@ export function AdminPage() {
 	const [newBadgeColor, setNewBadgeColor] = React.useState('border-cyan-500 bg-cyan-500/10 text-cyan-300');
 
 	const [sortOrder, setSortOrder] = React.useState<'desc' | 'asc'>('desc');
+	const adminTableScrollRef = React.useRef<HTMLDivElement>(null);
+	const [adminTableScrollMax, setAdminTableScrollMax] = React.useState(0);
+	const [adminTableScrollLeft, setAdminTableScrollLeft] = React.useState(0);
+
+	React.useEffect(() => {
+		const element = adminTableScrollRef.current;
+		if (!element) return;
+
+		const update = () => {
+			setAdminTableScrollMax(
+				Math.max(0, element.scrollWidth - element.clientWidth)
+			);
+			setAdminTableScrollLeft(element.scrollLeft);
+		};
+
+		update();
+		const observer = new ResizeObserver(update);
+		observer.observe(element);
+		const table = element.querySelector('table');
+		if (table) observer.observe(table);
+		window.addEventListener('resize', update);
+
+		return () => {
+			observer.disconnect();
+			window.removeEventListener('resize', update);
+		};
+	}, [users.length]);
+
 
 	// 单人授勋弹窗
 	const [badgeModalOpen, setBadgeModalOpen] = React.useState(false);
@@ -1111,7 +1139,35 @@ async function handleBanIp(ip?: string, username?: string) {
 							{sortOrder === 'desc' ? '当前：最新注册在前' : '当前：最早元老在前'}
 						</Button>
 					</CardHeader>
-					<CardContent className="p-0 overflow-x-auto">
+					<CardContent className="p-0">
+						<div className="border-b border-[#30363d] bg-[#0d1117] px-4 py-2 flex items-center gap-3">
+							<label htmlFor="admin-table-horizontal-scroll" className="text-xs text-gray-300 whitespace-nowrap">
+								左右查看表格
+							</label>
+							<input
+								id="admin-table-horizontal-scroll"
+								type="range"
+								min={0}
+								max={adminTableScrollMax}
+								value={Math.min(adminTableScrollLeft, adminTableScrollMax)}
+								disabled={adminTableScrollMax === 0}
+								onChange={event => {
+									const position = Number(event.target.value);
+									if (adminTableScrollRef.current) {
+										adminTableScrollRef.current.scrollLeft = position;
+									}
+									setAdminTableScrollLeft(position);
+								}}
+								className="w-full min-w-0 accent-sky-500 disabled:opacity-40"
+								aria-label="横向移动会员管理表格"
+							/>
+							<span className="text-xs text-gray-500 whitespace-nowrap">← 拖动 →</span>
+						</div>
+						<div
+							ref={adminTableScrollRef}
+							onScroll={event => setAdminTableScrollLeft(event.currentTarget.scrollLeft)}
+							className="overflow-x-auto"
+						>
 						<table className="w-full text-xs text-left text-gray-300 min-w-[880px]">
 							<thead className="bg-[#0d1117] text-gray-400 border-b border-[#30363d]">
 								<tr>
@@ -1296,6 +1352,7 @@ async function handleBanIp(ip?: string, username?: string) {
 								})}
 							</tbody>
 						</table>
+						</div>
 					</CardContent>
 				</Card>
 			</div>
