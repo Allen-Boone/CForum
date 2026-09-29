@@ -13,6 +13,33 @@ interface SiteBadge {
 	color: string;
 }
 
+function formatBeijingTime(value?: string) {
+	if (!value) return '未知';
+
+	const normalized = value.endsWith('Z')
+		? value
+		: `${value.replace(' ', 'T')}Z`;
+
+	const date = new Date(normalized);
+
+	if (Number.isNaN(date.getTime())) {
+		return value;
+	}
+
+	return new Intl.DateTimeFormat('zh-CN', {
+		timeZone: 'Asia/Shanghai',
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+		hour: '2-digit',
+		minute: '2-digit',
+		second: '2-digit',
+		hour12: false
+	})
+		.format(date)
+		.replace(/\//g, '-');
+}
+
 export function AdminPage() {
 	const token = getToken();
 	const user = React.useMemo(() => getUser(), [token]);
@@ -1106,7 +1133,8 @@ async function handleBanIp(ip?: string, username?: string) {
 									<th className="py-2.5 px-3 w-14 text-center">序号</th>
 									<th className="py-2.5 px-4 max-w-[150px]">用户名</th>
 									<th className="py-2.5 px-4 max-w-[180px]">邮箱</th>
-									<th className="py-2.5 px-4 w-28">注册 IP 溯源</th>
+									<th className="py-2.5 px-4 w-44 whitespace-nowrap">注册时间（北京时间）</th>
+																			<th className="py-2.5 px-4 w-28">注册 IP 溯源</th>
 									<th className="py-2.5 px-4">称号与勋章</th>
 									<th className="py-2.5 px-4 w-20">当前积分</th>
 									<th className="py-2.5 px-4 w-28">角色身份</th>
@@ -1155,7 +1183,10 @@ async function handleBanIp(ip?: string, username?: string) {
 													{u.email}
 												</span>
 											</td>
-											<td className="py-3 px-4 font-mono text-[11px] text-cyan-400 whitespace-nowrap">
+											<td className="py-3 px-4 text-gray-400 font-mono text-[11px] whitespace-nowrap">
+																								{formatBeijingTime(u.created_at)}
+																							</td>
+																							<td className="py-3 px-4 font-mono text-[11px] text-cyan-400 whitespace-nowrap">
 												{u.reg_ip ? (
 													<span title="该用户的真实客户端IP">{u.reg_ip}</span>
 												) : (
