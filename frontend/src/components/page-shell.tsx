@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { SiteHeader } from '@/components/site-header';
+import { ArrowUp } from 'lucide-react';
 import { getUser, type User } from '@/lib/auth';
 
 const FAVICON_SVG =
@@ -11,6 +12,15 @@ export function PageShell({
 	children: React.ReactNode;
 }) {
 	const [user, setUser] = React.useState<User | null>(() => getUser());
+	const [showBackToTop, setShowBackToTop] = React.useState(false);
+
+	React.useEffect(() => {
+		const update = () => setShowBackToTop(window.scrollY > 200);
+		update();
+		window.addEventListener('scroll', update, { passive: true });
+		return () => window.removeEventListener('scroll', update);
+	}, []);
+
 
 	React.useEffect(() => {
 		if (!document.title || document.title.includes('CForum')) {
@@ -29,6 +39,18 @@ export function PageShell({
 		<div className="min-h-dvh bg-[#0d1117] text-white">
 			<SiteHeader currentUser={user} onLogout={() => setUser(null)} />
 			<main className="mx-auto w-full max-w-7xl px-4 py-5">{children}</main>
+			{showBackToTop && (
+				<button
+					type="button"
+					onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+					title="返回顶部"
+					aria-label="返回顶部"
+					className="fixed bottom-8 right-8 z-50 w-11 h-11 rounded-full bg-[#161b22]/90 hover:bg-[#21262d] border border-gray-600/80 hover:border-gray-400 text-gray-300 hover:text-white flex items-center justify-center shadow-2xl backdrop-blur-md transition-all hover:scale-110 active:scale-95 group animate-in fade-in zoom-in duration-200"
+				>
+					<ArrowUp className="w-5 h-5 stroke-[2.2] text-gray-200" />
+				</button>
+			)}
+
 		</div>
 	);
 }
