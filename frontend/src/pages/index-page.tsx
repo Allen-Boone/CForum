@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Gift, Flame, Zap, FolderInput, Gavel, X, CheckCircle2, ArrowUp, Bold, Italic, Heading, Quote, Code, FileCode, List, Link as LinkIcon, Image as ImageIcon, Smile, ExternalLink, Link2 } from 'lucide-react';
+import { MessageSquare, Plus, Coffee, CalendarCheck, Paperclip, Sparkles, Trophy, Lock, Pin, Trash2, Award, Clock, Send, Camera, Gift, Flame, Zap, FolderInput, Gavel, X, CheckCircle2, Bold, Italic, Heading, Quote, Code, FileCode, List, Link as LinkIcon, Image as ImageIcon, Smile, ExternalLink, Link2 } from 'lucide-react';
 import { PageShell } from '@/components/page-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -203,7 +203,6 @@ export function IndexPage() {
 	const avatarInputRef = React.useRef<HTMLInputElement>(null);
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
-	const [showBackToTop, setShowBackToTop] = React.useState(false);
 	const [profileUserId, setProfileUserId] = React.useState<number | null>(null);
 
 	const [blackhouseOpen, setBlackhouseOpen] = React.useState(false);
@@ -243,17 +242,6 @@ const loadCategories = React.useCallback(async () => {
 		} catch (_) {}
 	}, []);
 
-	React.useEffect(() => {
-		function handleScroll() {
-			setShowBackToTop(window.scrollY > 200);
-		}
-		window.addEventListener('scroll', handleScroll, { passive: true });
-		return () => window.removeEventListener('scroll', handleScroll);
-	}, []);
-
-	function scrollToTop() {
-		window.scrollTo({ top: 0, behavior: 'smooth' });
-	}
 
 	React.useEffect(() => {
 		loadStats();
@@ -1378,16 +1366,7 @@ const loadCategories = React.useCallback(async () => {
 				</div>
 			</div>
 
-			{showBackToTop && (
-				<button
-					type="button"
-					onClick={scrollToTop}
-					title="返回顶部"
-					className="fixed bottom-8 right-8 z-50 w-11 h-11 rounded-full bg-[#161b22]/90 hover:bg-[#21262d] border border-gray-600/80 hover:border-gray-400 text-gray-300 hover:text-white flex items-center justify-center shadow-2xl backdrop-blur-md transition-all hover:scale-110 active:scale-95 group animate-in fade-in zoom-in duration-200"
-				>
-					<ArrowUp className="w-5 h-5 stroke-[2.2] group-hover:-translate-y-0.5 transition-transform text-gray-200 group-hover:text-white" />
-				</button>
-			)}
+
 
 			{/* 社区小黑屋公示大弹窗 */}
 			{blackhouseOpen && (
